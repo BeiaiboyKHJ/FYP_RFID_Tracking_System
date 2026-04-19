@@ -1,0 +1,39 @@
+】* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+#root {
+    min-height: 100vh;
+}
+
+/* 1. FIXED: Removed extra 'f' from leaflet */
+/* 2. ADJUSTED: Height to 500px so cards are visible below it */
+.leaflet-container {
+    height: 500px; 
+    width: 100%;
+    margin: 0 auto;
+    /* 3. FIXED: Removed space in 2.5rem */
+    border-radius: 2.5rem; 
+    z-index: 0 !important;    
+}
+
+/* Styling the Popups to match your Dark Slate theme */
+.leaflet-popup-content-wrapper {
+    background: #1e293b; /* slate-800 */
+    color: white;
+    border-radius: 12px;
+    padding: 5px;
+}
+
+.leaflet-popup-tip {
+    background: #1e293b;
+}
+
+/* Optional: Make the text inside the popup look cleaner */
+.leaflet-popup-content {
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 14px;
+}
