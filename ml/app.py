@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
-import joblib  # To load your scaler
+import joblib 
 import sys
+import os
 print(sys.executable)
 from tensorflow.keras.models import load_model # To load your LSTM
 
@@ -11,15 +12,24 @@ CORS(app)
 
 # 1. Load your trained AI assets
 # Make sure these files are in the same folder as app.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+model = None
+scaler = None
+
 try:
-    model = load_model('fyp_lstm_model.h5')
-    scaler = joblib.load('scaler.pkl')
+    model = load_model(os.path.join(BASE_DIR, 'fyp_lstm_model.h5'))
+    scaler = joblib.load(os.path.join(BASE_DIR, 'scaler.pkl'))
     print("AI Model and Scaler loaded successfully!")
+except FileNotFoundError:
+    print("Error: scaler.pkl file not found. Please ensure it is in the same directory as app.py.")
 except Exception as e:
     print(f"Error loading AI assets: {e}")
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    if model is None or scaler is None:
+        return jsonify({"error": "AI model or scaler not loaded. Please check server logs."}), 500
+
     try:
         data = request.json
         items = data.get('items', [])
@@ -45,7 +55,7 @@ def predict():
             lstm_input = scaled_features.reshape((scaled_features.shape[0], 1, scaled_features.shape[1]))
 
             # 5. Run Prediction
-            prediction_score = model.predict(lstm_input)[0][0]
+            prediction_score = float(model.predict(lstm_input)[0][0])
             
             # 6. Interpret Results
             # If your model predicts 'Delay Minutes', calculate risk based on deadline
