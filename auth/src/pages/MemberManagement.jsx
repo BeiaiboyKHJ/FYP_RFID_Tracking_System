@@ -1,40 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../client';
-import { Search, Phone, Shield, User, MapPin, Loader2, CreditCard, Contact2 } from 'lucide-react';
+import { Search, Phone, Shield, User, MapPin, Loader2, CreditCard, Contact2, CheckCircle2 } from 'lucide-react';
 
 const MemberManagement = ({ role, currentUserId }) => {
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [isScanningMode, setIsScanningMode] = useState(false);
+  const [availableCheckpoints, setAvailableCheckpoints] = useState([]);
+ 
+  // NEW: State to control the scanning popup box
+  const [scanModal, setScanModal] = useState({
+    isOpen: false,
+    status: 'idle', // 'idle' | 'scanning' | 'success'
+    username: ''
+  });
 
-useEffect(() => {
+  useEffect(() => {
     fetchMembers();
 
     const subscription = supabase
       .channel('schema-db-changes')
-      .on('postgres_changes', 
-        { event: 'UPDATE', schema: 'public', table: 'Profiles' }, 
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'Profiles' },
         (payload) => {
-          setMembers(prevMembers => 
-            prevMembers.map(member => 
-              // Check if the updated record matches the member in our current list
+          setMembers(prevMembers =>
+            prevMembers.map(member =>
               member.user_id === (payload.new.user_id || payload.new.id)
-                ? { ...member, ...payload.new } // Merge new database data into our state
+                ? { ...member, ...payload.new }
                 : member
             )
           );
-          if (isScanningMode) {
-          setIsScanningMode(false);
-          console.log("Card detected and linked!");
-          }
+
+          // NEW: Safely check if we are scanning without relying on stale closure state
+          setScanModal(prevModal => {
+            if (prevModal.status === 'scanning') {
+              console.log("Card detected and linked!");
+              return { ...prevModal, status: 'success' };
+            }
+            return prevModal;
+          });
+
+          // Also turn off scanning mode globally
+          setIsScanningMode(prev => prev ? false : prev);
         }
       )
-      .on('postgres_changes', 
+      .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'system_state' },
         (payload) => {
           if (payload.new.is_scanning === false) {
             setIsScanningMode(false);
+            // If scanning stopped externally, close the modal
+            setScanModal(prev => prev.status === 'scanning' ? { ...prev, isOpen: false } : prev);
           }
         }
       )
@@ -45,75 +62,114 @@ useEffect(() => {
     };
   }, []);
 
-const handleStatusChange = async (userId, newStatus, username) => {
-  if (role !== 'admin') return;
-
-  // 1. Update Profiles
-  // IMPORTANT: If this still says "No user found", change 'user_id' to 'id' below
+useEffect(() => {
+const fetchCheckpoints = async () => {
   const { data, error } = await supabase
-    .from('Profiles')
-    .update({ status: newStatus })
-    .eq('user_id', userId) 
-    .select(); 
+    .from('locations')
+    .select('checkpoint_type, address, created_at, end_time, is_exit') // Try selecting all first to verify names
+    .order('created_at', { ascending: false });
 
+    if (data) {
+    // 2. Filter to keep only the UNIQUE/LATEST checkpoint types
+    const uniqueTypes = {};
+    const activeCheckpoints = data.reduce((acc, curr) => {
+      if (!uniqueTypes[curr.checkpoint_type]) {
+        uniqueTypes[curr.checkpoint_type] = true;
+        acc.push(curr);
+      }
+      return acc;
+    }, []);
 
-  if (error) {
-    console.error("Supabase Update Error:", error.message);
-    alert("Update failed: " + error.message);
-    return;
-  }
+    const sortedCheckpoints = activeCheckpoints.sort((a, b) =>
+      a.checkpoint_type.localeCompare(b.checkpoint_type)
+    );
 
-  // This check now works because 'data' is defined above
-  if (!data || data.length === 0) {
-    console.error("No user found with ID:", userId);
-    console.log("Tip: Check if your Profiles table uses 'id' instead of 'user_id' as the primary key.");
-    return;
-  }
-
-  // 2. Update local state
-  setMembers(prevMembers => 
-    prevMembers.map(member => 
-      member.user_id === userId ? { ...member, status: newStatus } : member
-    )
-  );
-
-  // 3. Handle Travel Sessions
-  if (newStatus === 'A') {
-    const { error: insertError } = await supabase.from('Travel_Sessions').insert({
-      user_id: userId,
-      check_in_time: new Date().toISOString(),
-      status: 'active'
-    });
-    if (insertError) console.error("Travel Session Insert Error:", insertError);
-  } 
-  else if (newStatus === 'B') {
-    const { data: activeSession } = await supabase
-      .from('Travel_Sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('check_in_time', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (activeSession) {
-      const checkIn = new Date(activeSession.check_in_time);
-      const checkOut = new Date();
-      const duration = Math.floor((checkOut - checkIn) / 60000);
-
-      await supabase.from('Travel_Sessions')
-        .update({ 
-          check_out_time: checkOut.toISOString(),
-          total_duration_minutes: duration,
-          status: 'completed'
-        })
-        .eq('id', activeSession.id);
+    setAvailableCheckpoints(sortedCheckpoints);
     }
-  }
-  else if (newStatus === 'Missing') {
-    console.log(`EMERGENCY: ${username || 'Unknown user'} marked as MISSING`);
-  }
+    if (error) console.error("Error fetching checkpoints:", error);
 };
+
+  fetchCheckpoints();
+
+  const checkpointSub = supabase
+    .channel('location-updates')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'locations' },
+      () => fetchCheckpoints()
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(checkpointSub);
+  };
+}, []); // Empty dependency array means this only runs once on mount
+
+  const handleStatusChange = async (userId, newStatus, username) => {
+    if (role !== 'admin') return;
+
+    // 1. Update Profiles
+    const { data, error } = await supabase
+      .from('Profiles')
+      .update({ status: newStatus })
+      .eq('user_id', userId)
+      .select();
+
+    if (error) {
+      console.error("Supabase Update Error:", error.message);
+      alert("Update failed: " + error.message);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      console.error("No user found with ID:", userId);
+      console.log("Tip: Check if your Profiles table uses 'id' instead of 'user_id' as the primary key.");
+      return;
+    }
+
+    // 2. Update local state
+    setMembers(prevMembers =>
+      prevMembers.map(member =>
+        member.user_id === userId ? { ...member, status: newStatus } : member
+      )
+    );
+
+    // 3. Handle Travel Sessions
+    if (newStatus === 'A') {
+      const { error: insertError } = await supabase.from('Travel_Sessions').insert({
+        user_id: userId,
+        check_in_time: new Date().toISOString(),
+        status: 'active'
+      });
+      if (insertError) console.error("Travel Session Insert Error:", insertError);
+    }
+    else if (newStatus === 'B') {
+      const { data: activeSession } = await supabase
+        .from('Travel_Sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .order('check_in_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeSession) {
+        const checkIn = new Date(activeSession.check_in_time);
+        const checkOut = new Date();
+        const duration = Math.floor((checkOut - checkIn) / 60000);
+
+        await supabase.from('Travel_Sessions')
+          .update({
+            check_out_time: checkOut.toISOString(),
+            total_duration_minutes: duration,
+            status: 'completed'
+          })
+          .eq('id', activeSession.id);
+      }
+    }
+    else if (newStatus === 'Missing') {
+      console.log(`EMERGENCY: ${username || 'Unknown user'} marked as MISSING`);
+    }
+  };
 
   const fetchMembers = async () => {
     const { data, error } = await supabase
@@ -125,28 +181,96 @@ const handleStatusChange = async (userId, newStatus, username) => {
     if (data) setMembers(data);
     setLoading(false);
   };
+ 
+// NEW: Deadline Watchdog Rule
+useEffect(() => {
+  // Only the Admin dashboard should process this logic to prevent multi-device conflicts
+  if (role !== 'admin' || availableCheckpoints.length === 0) return;
 
-  const startScanning = async (userId) => {
-    if (isScanningMode) {
-    setIsScanningMode(false);
-    const { error } = await supabase
-      .from('system_state')
-      .update({
-        is_scanning: false,
-        target_user_id: null,
-      })
-      .eq('id', 1);
-
-    if (error) {
-      console.error("Manual Stop Error:", error);} 
-    return;
-  }
+  const checkDeadlines = async () => {
+    // 1. Find the specific checkpoint marked as the exit
+    const exitCheckpoint = availableCheckpoints.find(cp => cp.is_exit === true);
     
+    if (!exitCheckpoint || !exitCheckpoint.end_time) {
+      console.log("Watchdog: Waiting for an exit checkpoint with a valid end_time...");
+      return;
+    }
+
+    const now = new Date();
+    const deadline = new Date(exitCheckpoint.end_time);
+
+    // 2. Check if the current local time has passed the deadline
+    if (now > deadline) {
+      console.log("🚨 DEADLINE EXPIRED: Checking for members not at the exit...");
+
+      // 3. Identify members who:
+      // - Are NOT admins
+      // - Are NOT already marked "Missing"
+      // - Their current status DOES NOT match the exit checkpoint name (e.g., 'C')
+      const stragglers = members.filter(m =>
+        m.status !== 'Missing' &&
+        m.status !== exitCheckpoint.checkpoint_type
+      );
+
+      if (stragglers.length > 0) {
+        const stragglerIds = stragglers.map(s => s.user_id);
+        console.warn(`Found ${stragglerIds.length} stragglers. Updating status to 'Missing'...`);
+
+        // 4. INSTANT DATABASE UPDATE
+        const { error } = await supabase
+          .from('Profiles')
+          .update({ status: 'Missing' })
+          .in('user_id', stragglerIds);
+
+        if (error) {
+          console.error("Database Update Error:", error.message);
+        } else {
+          console.log("Successfully flagged stragglers as Missing.");
+        }
+      } else {
+        console.log("All members accounted for. No updates needed.");
+      }
+    }
+  };
+
+  // Run the check immediately on load
+  checkDeadlines();
+
+  // Check every 10 seconds (for testing purposes, you can change this to 60000 for 1 minute)
+  const interval = setInterval(checkDeadlines, 10000);
+ 
+  return () => clearInterval(interval);
+}, [availableCheckpoints, members, role]);
+
+  // MODIFIED: Added username to parameters for the Modal UI
+  const startScanning = async (userId, username) => {
+    if (isScanningMode) {
+      // Manual stop triggered from table button
+      setIsScanningMode(false);
+      setScanModal({ isOpen: false, status: 'idle', username: '' });
+      
+      const { error } = await supabase
+        .from('system_state')
+        .update({
+          is_scanning: false,
+          target_user_id: null,
+        })
+        .eq('id', 1);
+
+      if (error) {
+        console.error("Manual Stop Error:", error);
+        }
+      return;
+    }
+    
+    // Start scan and open modal
     setIsScanningMode(true);
+    setScanModal({ isOpen: true, status: 'scanning', username: username });
+    
     const { data, error } = await supabase
       .from('system_state')
-      .update({ 
-        is_scanning: true, 
+      .update({
+        is_scanning: true,
         target_user_id: userId,
       })
       .eq('id', 1)
@@ -156,20 +280,31 @@ const handleStatusChange = async (userId, newStatus, username) => {
       console.error("Scan Trigger Error:", error);
       alert("Could not start scanner: " + error.message);
       setIsScanningMode(false);
+      setScanModal({ isOpen: false, status: 'idle', username: '' });
     } else if (!data || data.length === 0) {
       alert("Error: system_state row with ID 1 not found!");
       setIsScanningMode(false);
+      setScanModal({ isOpen: false, status: 'idle', username: '' });
     } else {
       console.log("System ready for scan:", data);
     }
   };
 
-const updateMemberField = async (userId, field, value) => {
+  // NEW: Function to handle modal closing & stopping DB scan
+  const closeModal = async () => {
+    if (scanModal.status === 'scanning') {
+      setIsScanningMode(false);
+      await supabase.from('system_state').update({ is_scanning: false, target_user_id: null }).eq('id', 1);
+    }
+    setScanModal({ isOpen: false, status: 'idle', username: '' });
+  };
+
+  const updateMemberField = async (userId, field, value) => {
     if (role !== 'admin') return;
 
     // 1. INSTANT UI UPDATE (Optimistic Update)
-    setMembers(prevMembers => 
-      prevMembers.map(member => 
+    setMembers(prevMembers =>
+      prevMembers.map(member =>
         member.user_id === userId ? { ...member, [field]: value } : member
       )
     );
@@ -177,18 +312,17 @@ const updateMemberField = async (userId, field, value) => {
     // 2. Background Database Update
     const { error } = await supabase
       .from('Profiles')
-      .update({ [field]: value === "" ? null : value }) // Convert empty strings to nulls in DB})
+      .update({ [field]: value === "" ? null : value })
       .eq('user_id', userId);
     
     if (error) {
       console.error(`Failed to update ${field}:`, error.message);
       alert(`Update failed: ${error.message}`);
-      // If it fails, refresh from DB to revert the UI to the truth
-      fetchMembers(); 
+      fetchMembers();
     }
   };
 
-  const filteredMembers = members.filter(m => 
+  const filteredMembers = members.filter(m =>
     m.username?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -200,27 +334,22 @@ const updateMemberField = async (userId, field, value) => {
     </div>
   );
 
-  const formatLastSeen = (timestamp) => {
-  if (!timestamp) return 'Never';
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
+  const getRelativeTime = (timestamp) => {
+    if (!timestamp) return 'No scans yet';
+    
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffInSeconds = Math.floor((now - then) / 1000);
 
-const getRelativeTime = (timestamp) => {
-  if (!timestamp) return 'No scans yet';
-  
-  const now = new Date();
-  const then = new Date(timestamp);
-  const diffInSeconds = Math.floor((now - then) / 1000);
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    
+    return then.toLocaleDateString();
+  };
 
-  if (diffInSeconds < 60) return 'Just now';
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-  
-  return then.toLocaleDateString(); // Fallback to date if > 1 day
-};
   return (
-    <div className="p-8 bg-slate-50 min-h-screen">
+    <div className="p-8 bg-slate-50 min-h-screen relative">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
@@ -243,7 +372,7 @@ const getRelativeTime = (timestamp) => {
       {/* Search Bar */}
       <div className="relative mb-6 text-stone-600">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-600 font-bold" size={20} />
-        <input 
+        <input
           type="text"
           placeholder="Search members by name..."
           className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 transition-all"
@@ -260,16 +389,16 @@ const getRelativeTime = (timestamp) => {
               <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Button Guide: RFID Tag Registration</h3>
               <ul className="mt-2 space-y-1 text-xs text-blue-800 leading-relaxed">
                 <li className="flex items-start gap-2">
-                  <span className="font-bold">1.</span> 
-                  Click the <span className="bg-blue-600 text-white px-1 rounded inline-flex items-center"><Contact2 size={10}/></span> button to start scanning. The button will turn <span className="text-amber-600 font-bold">Orange</span> and spin.
+                  <span className="font-bold">1.</span>
+                  Click the <span className="bg-blue-600 text-white px-1 rounded inline-flex items-center"><Contact2 size={10}/></span> button to start scanning. A popup box will appear.
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="font-bold">2.</span> 
-                  Tap the physical RFID card on the reader. The system will auto-save and stop spinning once detected.
+                  <span className="font-bold">2.</span>
+                  Tap the physical RFID card on the reader. The system will auto-save and notify you.
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="font-bold">3.</span> 
-                  <span className="underline">Manual Control:</span> You can click the spinning button again to cancel the scan, or manually type/backspace in the RFID box to update values.
+                  <span className="font-bold">3.</span>
+                  <span className="underline">Manual Control:</span> You can click "Cancel" on the popup, or manually type in the RFID box to update values.
                 </li>
               </ul>
             </div>
@@ -285,7 +414,7 @@ const getRelativeTime = (timestamp) => {
               <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Member</th>
               <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Group</th>
               {role === 'admin' && <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">RFID Tag</th>}
-              <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Current Status</th>
+              <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase w-75">Current Status</th>
               <th className="px-6 py-4 text-left text-sm font-semibold text-slate-600">Last Seen</th>
               {role === 'admin' && <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase text-center">Actions</th>}
             </tr>
@@ -293,18 +422,16 @@ const getRelativeTime = (timestamp) => {
           <tbody className="divide-y divide-slate-100">
             {filteredMembers.map((member) => (
               <tr key={member.user_id} className={`hover:bg-slate-50/50 transition-colors ${member.user_id === currentUserId ? "bg-blue-50/40" : ""}`}>
-                <td className="px-6 py-4">
+                <td className="px-6 py-4 ">
                   <div className="flex items-center gap-3">
-                    {/* Profile Image with Fallback */}
                     <img
                     src={member.avatar_url || `https://ui-avatars.com/api/?name=${member.username}&background=2563eb&color=fff&bold=true`}
                     alt="avatar"
                     className={`w-10 h-10 rounded-full object-cover shadow-sm border-3 ${
                     member.role === 'admin' ? 'border-red-500/70' : 'border-blue-500/30'
-                    }`} 
+                    }`}
                     />
 
-                    {/* Small Shield overlay for Admins */}
                     {member.role === 'admin' && (
                       <div className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 border border-white">
                         <Shield size={8} className="text-white" />
@@ -322,8 +449,8 @@ const getRelativeTime = (timestamp) => {
 
                 <td className="px-6 py-4">
                   {role === 'admin' ? (
-                    <select 
-                      value={member.group || ""} 
+                    <select
+                      value={member.group || ""}
                       onChange={(e) => updateMemberField(member.user_id, 'group', e.target.value)}
                       className="text-sm text-slate-800 bg-white border border-slate-800 rounded-lg p-1.5 outline-none focus:ring-2 focus:ring-blue-500"
                     >
@@ -341,30 +468,28 @@ const getRelativeTime = (timestamp) => {
                   )}
                 </td>
 
-
-                {/* Only show this cell if user is admin */}
               {role === 'admin' && (
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
                     <div className="relative flex items-center">
                       <CreditCard size={14} className="absolute left-2 text-slate-400" />
-                      <input 
+                      <input
                         type="text"
                         placeholder="Scan Card..."
-                        value={member.rfid_uid || ""} 
+                        value={member.rfid_uid || ""}
                         onChange={(e) => updateMemberField(member.user_id, 'rfid_uid', e.target.value)}
                         className="text-xs bg-white border border-slate-800 text-slate-800 rounded-lg pl-7 pr-2 py-1.5 w-32 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                       />
                     </div>
-                    <button 
-                      onClick={() => startScanning(member.user_id)}
+                    <button
+                      onClick={() => startScanning(member.user_id, member.username)}
                       className={`shrink-0 p-2 rounded-lg transition-all shadow-md flex items-center justify-center ${
-                        isScanningMode 
-                          ? "bg-amber-500 animate-pulse cursor-wait" 
+                        isScanningMode && scanModal.username === member.username
+                          ? "bg-amber-500 animate-pulse cursor-wait"
                           : "bg-blue-600 hover:bg-blue-700 active:scale-95 text-white"
                       }`}
                     >
-                      {isScanningMode ? (
+                      {isScanningMode && scanModal.username === member.username ? (
                         <Loader2 size={14} className="animate-spin text-white" />
                       ) : (
                         <Contact2 size={14} />
@@ -373,33 +498,47 @@ const getRelativeTime = (timestamp) => {
                   </div>
                 </td>
               )}
-                
-
-
 
                 <td className="px-6 py-4">
                   {role === 'admin' ? (
-                    <select 
-                      value={member.status || ""} 
-                      onChange={(e) => handleStatusChange(member.user_id, e.target.value, member.username)}
-                      className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-none outline-none cursor-pointer ${
-                        !member.status ? 'bg-slate-100 text-slate-500' : 
-                        member.status === 'A' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'
-                      }`}
-                    >
-                      <option value="">Not Started</option>
-                      <option value="A">Checkpoint A (Entry)</option>
-                      <option value="B">Checkpoint B (Exit)</option>
-                      <option value="Missing">Missing</option>
-                    </select>
+                <select
+                  value={member.status || ""}
+                  onChange={(e) => handleStatusChange(member.user_id, e.target.value, member.username)}
+                  className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-none outline-none cursor-pointer w-full truncate ${
+                    !member.status ? 'bg-slate-100 text-slate-500' :
+                    member.status === 'A' ? 'bg-blue-100 text-blue-600' :
+                    member.status === 'B' ? 'bg-emerald-100 text-emerald-600' :
+                    member.status === 'C' ? 'bg-cyan-300 text-cyan-900' :
+                    member.status === 'Missing' ? 'bg-red-300 text-red-900' :
+                    'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  <option value="">Not Started</option>
+                  
+                  {/* DYNAMIC CHECKPOINTS FROM DB */}
+                  {availableCheckpoints.length === 0 ? (
+                    <option disabled>No active checkpoints found</option>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    availableCheckpoints.map((cp) => (
+                      <option key={cp.checkpoint_type} value={cp.checkpoint_type}>
+                        Checkpoint {cp.checkpoint_type} ({cp.address})
+                      </option>
+                    ))
+                  )}
+                  <option value="Missing" className="text-red-600 font-bold">Missing</option>
+                </select>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm">
                       <MapPin size={14} className="text-slate-400" />
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
-                        member.status === 'A' ? 'bg-blue-100 text-blue-600' : 
-                        member.status === 'B' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-600'
+                      <span className={`text-xs font-bold px-2.5 py-1.5 rounded-full w-full truncate ${
+                        !member.status ? 'bg-slate-100 text-slate-600' :
+                        member.status === 'A' ? 'bg-blue-100 text-blue-600' :
+                        member.status === 'B' ? 'bg-emerald-100 text-emerald-600' :
+                        member.status === 'C' ? 'bg-cyan-300 text-cyan-900' :
+                        member.status === 'Missing' ? 'bg-red-300 text-red-900' :
+                        'bg-amber-100 text-amber-700'
                       }`}>
-                        {member.status === 'A' ? "Entered A" : member.status === 'B' ? "Completed B" : "Not Started"}
+                        {!member.status ? 'Not Started' : member.status === 'Missing' ? 'Missing' : `At Checkpoint ${member.status}`}
                       </span>
                     </div>
                   )}
@@ -418,7 +557,7 @@ const getRelativeTime = (timestamp) => {
 
                 {role === 'admin' && (
                   <td className="px-6 py-4 text-center">
-                    <button 
+                    <button
                       onClick={() => updateMemberField(member.user_id, 'role', member.role === 'admin' ? 'member' : 'admin')}
                       className={`p-2 rounded-lg transition-all ${
                         member.role === 'admin' ? 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-800 hover:text-white'
@@ -433,6 +572,50 @@ const getRelativeTime = (timestamp) => {
           </tbody>
         </table>
       </div>
+
+      {/* SCANNING MODAL POPUP */}
+      {scanModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity">
+          <div className="bg-white rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl relative">
+            
+            {scanModal.status === 'scanning' ? (
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+                  <Loader2 size={32} className="text-blue-600 animate-spin" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Awaiting Scan</h3>
+                <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+                  Please tap the physical RFID card on the reader to link it to <span className="font-bold text-slate-800">{scanModal.username}</span>.
+                </p>
+                <button
+                  onClick={closeModal}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                >
+                  Cancel Scanning
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-4">
+                  <CheckCircle2 size={32} className="text-emerald-500" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2">Card Scanned!</h3>
+                <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+                  The RFID tag was successfully linked to <span className="font-bold text-slate-800">{scanModal.username}</span>.
+                </p>
+                <button
+                  onClick={closeModal}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl transition-colors shadow-sm"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { SignUp, Login, Homepage, Profile } from './pages';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar, { SidebarItem } from './components/sidebar';
-import { Home, Bell, User, Users, UserCog, MapPin, BarChart3, LogOut } from 'lucide-react';
+import { Home, Bell, User, Users, UserCog, MapPin, ChartPie, BarChart, LogOut } from 'lucide-react';
 import ManageGroups from './pages/ManageGroups';
 import MemberManagement from './pages/MemberManagement'; 
 import LocationManagement from './pages/LocationManagement';
 import NotificationPage from './pages/NotificationPage';
 import SchedulePage from './pages/SchedulePage';
+import AnalyticsPage from './pages/AnalyticsPage';
 import { supabase } from './client';
 
 const App = () => {
@@ -86,8 +87,7 @@ const channel = supabase
 
                     setNotifications(prev => {
                       if (prev.find(n => n.id === newAlert.id)) return prev;
-                      // Play sound ONLY when a new notification is added
-                      new Audio('/dawg.mp3').play().catch((e) => console.log("Audio play blocked by browser", e));
+                      new Audio('/alert1.mp3').play().catch((e) => console.log("Audio play blocked by browser", e));
                       return [newAlert, ...prev];
                     });
                   }
@@ -99,7 +99,6 @@ const channel = supabase
               fetchFullProfile(recordId);
 
             } else if (currentStatus && currentStatus !== 'MISSING') {
-              // FIX: Only remove the alert if the status was EXPLICITLY changed to something else (like 'A' or 'B')
               // This prevents alerts from disappearing if you edit their group while they are missing.
               setNotifications(prev => prev.filter(n => n.id !== (payload.new?.user_id || payload.old?.user_id)));
             }
@@ -212,11 +211,15 @@ const channel = supabase
         />
 
         <SidebarItem 
-          icon={<BarChart3 size={20} />} text="Schedule" 
+          icon={<BarChart size={20} />} text="Schedule" 
           onClick={() => navigate('/schedule')} active={location.pathname === '/schedule'}
         />
-        
-        
+
+        <SidebarItem 
+          icon={<ChartPie size={20} />} text="Analytics" 
+          onClick={() => navigate('/analytics')} active={location.pathname === '/analytics'}
+        />
+
         <hr className="my-3 border-slate-800 opacity-20" />
         <SidebarItem icon={<LogOut size={20} />} text="Logout" onClick={handleLogout} />
       </Sidebar>
@@ -231,6 +234,7 @@ const channel = supabase
           <Route path="/manage-location" element={<LocationManagement userRole={role} />} />
           <Route path="/notifications" element={<NotificationPage notifications={notifications} setNotifications={setNotifications} />} /> 
           <Route path="/schedule" element={<SchedulePage role={role} />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="*" element={<Navigate to="/homepage" />} />
         </Routes>
         </div>

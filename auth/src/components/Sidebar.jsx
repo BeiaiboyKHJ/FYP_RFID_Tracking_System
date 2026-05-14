@@ -14,7 +14,7 @@ export default function Sidebar({ children, userEmail, userName, role, avatarUrl
       >
         <div className="p-4 pb-2 flex justify-between items-center">
           <div className={`overflow-hidden transition-all duration-300 ${expanded ? "w-32 opacity-100" : "w-0 opacity-0"}`}>
-              <span className="font-bold text-black whitespace-nowrap text-lg tracking-tight">RFID Tracker</span>
+              <span className="font-bold text-black whitespace-nowrap text-lg tracking-tight"> Tourtrack </span>
           </div>
           
           <button

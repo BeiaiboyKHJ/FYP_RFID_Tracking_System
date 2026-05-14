@@ -1,303 +1,269 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../client'; 
-import { MapPin, Clock, Loader2, AlertTriangle, UserCheck, UserX, Cloud, Users, CheckCircle2, HelpCircle, Footprints } from 'lucide-react';
+import { MapPin, Clock, Loader2, AlertTriangle, UserX, Cloud, Users, Footprints } from 'lucide-react';
 
 const Homepage = ({ token }) => {
   const [profile, setProfile] = useState(null);
-  const [checkpoints, setCheckpoints] = useState({ A: null, B: null });
-  const [memberStats, setMemberStats] = useState({ total: 0, atA: 0, atB: 0, missing: 0 });
+  const [checkpoints, setCheckpoints] = useState([]);
+  const [memberStats, setMemberStats] = useState({ total: 0, missing: 0 });
   const [missingMembers, setMissingMembers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // --- Logic remains the same as your existing code ---
   const fetchData = async () => {
     try {
-      if (token?.user?.id) {
+      setLoading(true);
+      // 1. Fetch Profile
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
         const { data: profileData } = await supabase
           .from('Profiles')
-          .select('username,status')
-          .eq('user_id', token.user.id)
+          .select('*')
+          .eq('user_id', user.id)
           .single();
         setProfile(profileData);
       }
-      const { data: locData } = await supabase.from('locations').select('*').order('created_at', { ascending: false });
+
+      // 2. Fetch Active Checkpoints
+      const { data: locData } = await supabase
+        .from('locations')
+        .select('*')
+        .order('created_at', { ascending: false });
+
       if (locData) {
-        setCheckpoints({
-          A: locData.find(l => l.checkpoint_type === 'A'),
-          B: locData.find(l => l.checkpoint_type === 'B')
-        });
+        const uniqueTypes = {};
+        const activeCheckpoints = (locData || []).reduce((acc, curr) => {
+          if (!uniqueTypes[curr.checkpoint_type]) {
+            uniqueTypes[curr.checkpoint_type] = true;
+            acc.push(curr);
+          }
+          return acc;
+        }, []).sort((a, b) => a.checkpoint_type.localeCompare(b.checkpoint_type));
+
+        setCheckpoints(activeCheckpoints);
+
+        // 3. Fetch Members and Map to Stats
+        const { data: allMembers } = await supabase.from('Profiles').select('*');
+        if (allMembers) {
+          const stats = {
+            total: allMembers.length,
+            missing: allMembers.filter(m => m.status === 'Missing').length,
+          };
+          activeCheckpoints.forEach(cp => {
+            stats[cp.checkpoint_type] = allMembers.filter(m => m.status === cp.checkpoint_type).length;
+          });
+          setMemberStats(stats);
+          setMissingMembers(allMembers.filter(m => m.status === 'Missing'));
+        }
       }
-      const { data: allMembers } = await supabase.from('Profiles').select('*');
-      if (allMembers) {
-        const usersAtB = allMembers.filter(m => m.status === 'B');
-        const missingList = allMembers.filter(m => m.status === 'Missing');
-        setMissingMembers(missingList);
-        setMemberStats({
-          total: allMembers.length,
-          atA: allMembers.filter(m => m.status === 'A').length,
-          atB: usersAtB.length,
-          missing: missingList.length
-        });
-      }
-    } catch (error) { console.error(error); } finally { setLoading(false); }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     if (token) fetchData();
-    const subscription = supabase.channel('hp-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'Profiles' }, () => fetchData()).subscribe();
+    const subscription = supabase.channel('hp-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'Profiles' }, () => fetchData())
+      .subscribe();
     return () => supabase.removeChannel(subscription);
   }, [token]);
 
   const userStatus = profile?.status;
-  const currentLocationName = userStatus === 'B' ? checkpoints.B?.address : userStatus === 'A' ? checkpoints.A?.address : "Not Checked In";
+  // SAFE CHECK: Find current location logic
+  const currentLocation = checkpoints.find(cp => cp.checkpoint_type === userStatus) || null;
+  const currentLocationAddress = currentLocation?.address || "Not Checked In";
 
-  if (loading) return <div className="flex h-screen items-center justify-center bg-[#0f172a]"><Loader2 className="animate-spin text-white" size={40} /></div>;
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-900">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="animate-spin text-indigo-500" size={40} />
+          <p className="text-slate-400 font-medium">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-stone-900 min-h-screen text-white font-sans">
+    <div className="bg-taupe-900 min-h-screen text-slate-50 font-sans overflow-x-hidden">
       
-      {/* 1. HERO SECTION (Header with Half-Transparent Image) */}
-      <div className="relative h-[60vh] w-full flex items-center justify-center overflow-hidden">
-        {/* The Background Image */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-1000 hover:scale-105"
-          style={{ 
-            backgroundImage: `url('/img/travel1.jpg')`, 
-            opacity: 0.5
-          }}
-        ></div>
-        {/* Gradient Overlay for Text Readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[#1c1917]/20 to-[#1c1917]"></div>
-        {/* Hero Text */}
-        <div className="relative z-10 text-center px-4">
-          <h1 className="font-sans text-8xl md:text-6xl font-black tracking-tighter uppercase mb-2 drop-shadow-2xl">
-            RFID TRAVEL SYSTEM
-          </h1>
-          <p className="text-xl md:text-2xl font-normal font-josefin tracking-widest text-slate-300 uppercase">
-            Welcome Back, {profile?.username || "Admin"}
+      {/* 1. HERO SECTION */}
+      <div className="relative h-[40vh] min-h-[320px] w-full flex items-center px-4 sm:px-8 md:px-16 overflow-hidden">
+        <div className="absolute inset-0 bg-cover bg-center opacity-90" style={{ backgroundImage: `url('/img/travel1.jpg')` }}></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-taupe-900 via-taupe-700/60 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-taupe-900/50"></div>
+        
+        <div className="relative z-10 w-full max-w-6xl mx-auto">
+          <p className="text-indigo-400 font-semibold tracking-widest uppercase text-sm mb-2 flex items-center gap-2">
+            <Footprints size={16} /> RFID Travel System
           </p>
-          <div className="mt-8 flex justify-center">
-            <div className="animate-bounce p-2 bg-white/10 rounded-full backdrop-blur-sm">
-               <Footprints size={20} className="text-white" />
-            </div>
-          </div>
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-2 text-white">
+            Welcome back, {profile?.username || "Admin"}
+          </h1>
+          <p className="text-slate-400 max-w-xl text-sm md:text-base">
+            Monitor real-time checkpoint data, group locations, and track active member statuses across your entire route.
+          </p>
         </div>
       </div>
 
       {/* 2. CURRENT LOCATION BAR */}
-      <div className="max-w-6xl mx-auto -mt-12 relative z-20 px-4">
-        <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between shadow-2xl">
-          <div className="flex items-center gap-4">
-            {/* Icon Container */}
-            <div className="p-3 bg-indigo-300 rounded-xl shadow-lg shadow-white/30 text-slate-900 shrink-0">
-              <MapPin size={24} />
-            </div>
-
-            {/* Vertical Text Stack */}
-            <div className="flex flex-col">
-              {/* Line 1: Header */}
-              <p className="text-2xl font-sans uppercase tracking-widest text-orange-200 shadow-lg-white/70">
-                Your Current Location
-              </p>
-              
-              {/* Line 2: Checkpoint Identifier */}
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-black text-olive-300 uppercase tracking-tighter font-josefin shadow-lg-white/70"> 
-                  {userStatus ? `Checkpoint ${userStatus}` : "Status: Pending"}
-                </span>
-                {userStatus && (
-                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                )}
+      <div className="max-w-6xl mx-auto -mt-10 relative z-20 px-4 mb-12">
+        <div className="bg-cyan-950 border border-lime-400 rounded-2xl p-6 shadow-xl">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div className="flex items-center gap-5">
+              <div className="p-3.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20 text-indigo-400">
+                <MapPin size={28} />
               </div>
-
-              {/* Line 3: Exact Address */}
-              <h2 className="text-xl font-bold text-white leading-tight">
-                {currentLocationName}
-              </h2>
+              <div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Your Current Location</p>
+                <div className="flex items-baseline gap-3">
+                  <h2 className="text-2xl font-bold text-white">
+                    {currentLocation ? `Checkpoint ${currentLocation.checkpoint_type}` : "Status Pending"}
+                  </h2>
+                </div>
+                <p className="text-slate-400 text-sm mt-0.5">{currentLocationAddress}</p>
+              </div>
             </div>
+
+            {memberStats.missing > 0 && (
+              <div className="flex items-center gap-2 bg-red-500/10 text-red-400 px-5 py-2.5 rounded-lg border border-red-500/20 shadow-sm animate-pulse">
+                <AlertTriangle size={18} />
+                <span className="font-semibold text-sm">{memberStats.missing} Members Overdue</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. MEMBER COUNTS */}
+      <div className="max-w-6xl mx-auto px-4 mb-16">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold flex items-center gap-2 text-white">
+            <Users size={20} className="text-indigo-400" /> Member Overview
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {/* Primary Stats */}
+          <div className="col-span-2 lg:col-span-3 bg-slate-800 border border-slate-700 p-6 rounded-2xl">
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Members</p>
+            <p className="text-4xl font-extrabold text-white">{memberStats.total || 0}</p>
           </div>
 
-          {/* Overdue Alert */}
-          {memberStats.missing > 0 && (
-            <div className="mt-4 md:mt-0 flex items-center gap-2 bg-red-500/20 text-red-400 px-4 py-2 rounded-full border border-red-500/30 animate-pulse">
-              <AlertTriangle size={18} />
-              <span className="text-sm font-bold tracking-tight">
-                {memberStats.missing} Members Overdue
-              </span>
+          <div className="col-span-2 lg:col-span-3 bg-slate-800 border border-red-500/30 p-6 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10 text-red-500">
+              <AlertTriangle size={64} />
             </div>
-          )}
-        </div>
-      </div>
+            <p className="text-red-400 text-xm font-bold uppercase tracking-wider mb-2">Missing / Overdue</p>
+            <p className="text-4xl font-extrabold text-red-400">{memberStats.missing || 0}</p>
+          </div>
 
-      {/* 3. MEMBER COUNTS (GRID) */}
-      <div className="max-w-6xl mx-auto py-16 px-4">
-        <h2 className="text-2xl font-bold mb-8 flex items-center gap-2">
-            <Users size={24} className="text-blue-400" /> Member Statistics
-        </h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-          <StatBox label="Total" value={memberStats.total} icon={<Users />} color="blue" />
-          <StatBox label="At A" value={memberStats.atA} icon={<UserCheck />} color="amber" />
-          <StatBox label="At B" value={memberStats.atB} icon={<CheckCircle2 />} color="fuchsia" />
-          <StatBox label="Missing" value={memberStats.missing} icon={<HelpCircle />} color="red" isCritical={memberStats.missing > 0} />
-        </div>
-      </div>
-
-      {/* 4. CHECKPOINT DETAILS */}
-      <div className="max-w-6xl mx-auto pb-16 px-4">
-         <h2 className="text-2xl font-bold mb-8 flex items-center gap-2 text-white">
-            <MapPin size={24} className="text-blue-400" /> Checkpoint Information
-        </h2>
-        <div className="grid md:grid-cols-2 gap-8 ">
-          {['A', 'B'].map((type) => {
-            const data = checkpoints[type];
-            return (
-              <div key={type} className="group bg-white/5 border border-white/10 p-8 rounded-3xl hover:bg-white/10 transition-all duration-300 ">
-                <div className="flex justify-between items-start mb-6">
-                   <h3 className="text-3xl font-bold">Checkpoint {type}</h3>
-                   <span className="text-xs font-black px-3 py-1 bg-white/10 rounded-full tracking-tighter uppercase">
-                     {type === 'A' ? 'Entry' : 'Exit'}
-                   </span>
-                </div>
-                {data ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 text-slate-300">
-                      <MapPin size={18} className="text-blue-400" /> 
-                      <span className="text-lg">{data.address}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-slate-300">
-                      <Clock size={18} className="text-blue-400" />
-                      <span>Deadline: {new Date(data.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-slate-300">
-                      <Cloud size={18} className="text-blue-400" />
-                      <span>{data.weather || "Weather data pending"}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-500 italic">Configuration Required</p>
-                )}
+          {/* Checkpoints Stats */}
+          {checkpoints.map((cp) => (
+            <div key={cp.id} className="col-span-1 lg:col-span-2 bg-slate-800 border border-slate-700 p-5 rounded-2xl">
+              <p className="text-slate-400 text-[15px] font-bold uppercase tracking-wider mb-1">Checkpoint {cp.checkpoint_type}</p>
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-2xl font-bold text-white">{memberStats[cp.checkpoint_type] || 0}</p>
+                <span className="text-[20px] text-slate-500 font-medium">Scanned</span>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* 5. MISSING MEMBERS LIST (Only if exists) */}
+      {/* 4. CHECKPOINT INFORMATION */}
+      <div className="max-w-6xl mx-auto px-4 mb-16">
+        <h2 className="text-xl font-bold mb-6 flex items-center gap-2 text-white">
+          <Clock size={20} className="text-indigo-400" /> Route Information
+        </h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {checkpoints.map((cp) => (
+            <div key={cp.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-6 flex flex-col h-full hover:border-indigo-500/50 transition-colors">
+              <div className="flex justify-between items-start mb-5">
+                <h3 className="text-lg font-bold text-white">Checkpoint {cp.checkpoint_type}</h3>
+                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider ${cp.is_exit ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+                  {cp.is_exit ? 'Exit' : 'Waypoint'}
+                </span>
+              </div>
+              
+              <div className="space-y-3.5 text-sm mt-auto">
+                <div className="flex items-start gap-3 text-slate-300">
+                  <MapPin size={16} className="text-slate-500 mt-0.5 shrink-0" /> 
+                  <span className="leading-snug">{cp.address}</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300">
+                  <Clock size={16} className="text-slate-500 shrink-0" /> 
+                  <span> Deadline: {cp.end_time ? new Date(cp.end_time).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "No active deadline"}</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300">
+                  <Cloud size={16} className="text-slate-500 shrink-0" /> 
+                  <span>{cp.weather || "Conditions clear"}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 5. EMERGENCY CONTACT LIST */}
       {missingMembers.length > 0 && (
-        <div className="max-w-6xl mx-auto pb-24 px-4">
-           <div className="bg-red-400/10 border border-red-500/20 rounded-3xl overflow-hidden shadow-2xl">
-             <div className="bg-red-300 px-8 py-4 flex items-center justify-between">
-                <h2 className="font-black uppercase tracking-tighter text-xl">Emergency Contact List</h2>
-                <UserX size={24} />
-             </div>
-             <div className="p-4 overflow-x-auto">
-               <table className="w-full">
-                 <thead>
-                   <tr className="text-left text-xs uppercase tracking-widest text-red-400">
-                     <th className="px-6 py-4">Name</th>
-                     <th className="px-6 py-4">Group</th>
-                     <th className="px-6 py-4">Phone</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-white/5">
-                   {missingMembers.map(m => (
-                     <tr key={m.user_id} className="hover:bg-white/5 transition-colors">
-                       <td className="px-6 py-4 font-bold">{m.username}</td>
-                       <td className="px-6 py-4 text-slate-400">{m.group || "Solo"}</td>
-                       <td className="px-6 py-4 font-mono text-red-400">{m.phone_number || "Unavailable"}</td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-             </div>
-           </div>
+        <div className="max-w-6xl mx-auto px-4 mb-16">
+          <div className="bg-slate-800 border border-red-500/30 rounded-2xl overflow-hidden shadow-lg">
+            <div className="bg-red-500/10 border-b border-red-500/20 px-6 py-4 flex items-center justify-between">
+              <h2 className="font-bold text-red-400 flex items-center gap-2">
+                <UserX size={18} /> Emergency : Missing Members
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-slate-800/50 text-slate-400 border-b border-slate-700">
+                  <tr>
+                    <th className="px-6 py-3.5 font-medium">Member Name</th>
+                    <th className="px-6 py-3.5 font-medium">Assigned Group</th>
+                    <th className="px-6 py-3.5 font-medium text-right">Contact Number</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50 text-slate-300">
+                  {missingMembers.map(m => (
+                    <tr key={m.user_id} className="hover:bg-slate-700/30 transition-colors">
+                      <td className="px-6 py-4 font-semibold text-white">{m.username}</td>
+                      <td className="px-6 py-4">{m.group || "Solo Traveler"}</td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="font-mono text-red-300 bg-red-500/10 px-2 py-1 rounded text-xs border border-red-500/20">
+                          {m.phone_number || "Unavailable"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 6. BOTTOM IMAGE SECTION */}
-      <div className="relative h-[90vh] w-full mt-20 overflow-hidden group">
-        {/* The Background Image */}
+      <div className="relative h-[40vh] w-full mt-10 overflow-hidden group">
         <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-700 group-hover:scale-110"
-          style={{ 
-            backgroundImage: `url('/img/travel2.jpg')`, 
-            opacity: 0.8
-          }}
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-[2000ms] group-hover:scale-105"
+          style={{ backgroundImage: `url('/img/travel2.jpg')`, opacity: 0.7 }}
         ></div>
         
-        {/* Gradient Transition (Fades from Stone-900 into the image) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-transparent to-stone-900"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-neutral-500 via-taupe-900/20 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-taupe-900 to-transparent h-32"></div>
 
-        {/* Overlay Content */}
         <div className="relative z-10 h-full flex flex-col items-center justify-center px-4 text-center">
-          <h2 className="font-marker text-4xl md:text-5xl text-white opacity-90 rotate-[-2deg] tracking-wider">
+          <h2 className="text-white text-3xl md:text-4xl font-bold tracking-tight mb-4">
             Safe Travels
           </h2>
-          <p className="font-josefin text-stone-300 uppercase tracking-[0.4em] text-sm mt-4">
-            Wander for Distraction, Travel for Fulfilment
+          <p className="text-slate-400 uppercase tracking-widest text-xs font-semibold max-w-md">
+            Wander for distraction, travel for fulfilment. Ensure all checkpoints are cleared before proceeding.
           </p>
-          
-          {/* A small decorative line */}
-          <div className="w-12 h-[1px] bg-indigo-500 mt-6 shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
         </div>
       </div>
-    </div>
-  );
-};
-
-const StatBox = ({ label, value, icon, color, isCritical }) => {
-  // 1. Every color MUST have these exact keys: bgBox, bgIcon, text, border, hover
-  const theme = {
-    rose: { 
-      bgBox: "bg-rose-500/10",
-      bgIcon: "bg-rose-600/20",
-      text: "text-rose-400",
-      border: "border-rose-500/30",
-      hover: "hover:border-rose-500/60" 
-    },
-    amber: { 
-      bgBox: "bg-amber-500/10", 
-      bgIcon: "bg-amber-600/20", 
-      text: "text-amber-400", 
-      border: "border-amber-500/30", 
-      hover: "hover:border-amber-500/60" 
-    },
-    fuchsia: { 
-      bgBox: "bg-fuchsia-500/10", 
-      bgIcon: "bg-fuchsia-600/20", 
-      text: "text-fuchsia-400", 
-      border: "border-fuchsia-500/30", 
-      hover: "hover:border-fuchsia-500/60" 
-    },
-    blue: { 
-      bgBox: "bg-blue-500/10", 
-      bgIcon: "bg-blue-600/20", 
-      text: "text-blue-400", 
-      border: "border-blue-500/30", 
-      hover: "hover:border-blue-500/60" 
-    }
-  };
-
-  // 2. SAFETY CHECK: If 'color' is missing or wrong, use 'blue'
-  const activeTheme = theme[color] || theme.blue;
-
-  return (
-    <div className={`p-8 border rounded-3xl transition-all hover:-translate-y-1 backdrop-blur-sm
-      ${isCritical 
-        ? 'border-red-500 bg-red-500/15' 
-        : `${activeTheme.bgBox} ${activeTheme.border} ${activeTheme.hover}`}`}>
       
-      <div className={`mb-4 w-10 h-10 flex items-center justify-center rounded-xl ${activeTheme.bgIcon} ${activeTheme.text}`}>
-        {icon && React.isValidElement(icon) ? React.cloneElement(icon, { size: 20 }) : null}
-      </div>
-
-      <p className={`text-4xl font-black mb-1 ${isCritical ? 'text-red-400' : activeTheme.text}`}>
-        {value}
-      </p>
-      
-      <p className="text-xs uppercase tracking-widest text-white/50 font-bold">
-        {label}
-      </p>
     </div>
   );
 };
