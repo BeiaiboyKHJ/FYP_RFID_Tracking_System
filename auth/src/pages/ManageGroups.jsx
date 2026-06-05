@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../client'; 
 import { 
-  ArrowLeft, UserPlus, Trash2, 
+  ArrowLeft, UserPlus, Trash2, Plus, Edit2,
   Footprints, Truck, Bus, Loader2 
 } from 'lucide-react';
 
@@ -38,8 +38,8 @@ const MemberListView = ({ teamName, onBack, role }) => {
 
   const handleAddMember = async (userId) => {
     const currentGroupMode = currentMembers.length > 0 
-    ? currentMembers[0].vehicle_type 
-    : 'walk';
+      ? currentMembers[0].vehicle_type 
+      : 'walk';
 
     const { error } = await supabase
       .from('Profiles')
@@ -120,7 +120,6 @@ const MemberListView = ({ teamName, onBack, role }) => {
         </table>
       </div>
 
-      {/* Modal for adding members */}
       {isAdding && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-[100] p-4">
           <div className="bg-white p-8 rounded-[32px] w-full max-w-md shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
@@ -148,13 +147,27 @@ const MemberListView = ({ teamName, onBack, role }) => {
 };
 
 // --- 2. SUB-COMPONENT: TEAM CARD ---
-const TeamCard = ({ teamName, onShowMembers, stats, role, onUpdateTransport }) => {
+const TeamCard = ({ teamName, onShowMembers, stats, role, onUpdateTransport, onDeleteTeam, onRenameTeam }) => {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState(teamName);
 
   const handleModeChange = async (newMode) => {
     setIsUpdating(true);
     await onUpdateTransport(teamName, newMode);
     setIsUpdating(false);
+  };
+
+  const handleRename = async (e) => {
+    e.preventDefault();
+    if (!newName.trim() || newName === teamName) {
+      setIsRenaming(false);
+      setNewName(teamName);
+      return;
+    }
+
+    await onRenameTeam(teamName, newName);
+    setIsRenaming(false);
   };
 
   return (
@@ -167,7 +180,31 @@ const TeamCard = ({ teamName, onShowMembers, stats, role, onUpdateTransport }) =
       
       <div className="flex justify-between items-start mb-6">
         <h2 className="text-xl font-black text-slate-800 tracking-tight">{teamName}</h2>
-        <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase">Active</div>
+        <div className="flex gap-2">
+          <div className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-black uppercase">Active</div>
+          {role?.toLowerCase() === 'admin' && (
+            <>
+              <button
+                onClick={() => setIsRenaming(true)}
+                className="text-slate-300 hover:text-indigo-500 transition-colors p-1"
+                title="Rename team"
+              >
+                <Edit2 size={16} />
+              </button>
+              
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Delete team "${teamName}"?`)) onDeleteTeam(teamName);
+                  }}
+                  className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                  title="Delete empty team"
+                >
+                  <Trash2 size={16} />
+                </button>
+              
+            </>
+          )}
+        </div>
       </div>
       
       <div className="grid grid-cols-2 gap-4 mb-8">
@@ -190,8 +227,8 @@ const TeamCard = ({ teamName, onShowMembers, stats, role, onUpdateTransport }) =
           ].map((item) => (
             <button
               key={item.id}
-              disabled={role?.toLowerCase() !== 'admin' || stats.total === 0} 
-              title={stats.total === 0 ? "No members in group, Add members to change mode" : ""}
+              disabled={role?.toLowerCase() !== 'admin'} 
+              title={role?.toLowerCase() !== 'admin' ? "Admin permission required" : ""}
               onClick={() => handleModeChange(item.id)}
               className={`flex-1 flex justify-center py-3 rounded-xl transition-all ${
                 stats.currentMode === item.id 
@@ -211,6 +248,43 @@ const TeamCard = ({ teamName, onShowMembers, stats, role, onUpdateTransport }) =
       >
         View Members
       </button>
+
+      {/* Rename Modal */}
+      {isRenaming && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+          <div className="bg-white p-8 rounded-[32px] w-full max-w-md shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold text-slate-800 mb-6">Rename Team</h3>
+            <form onSubmit={handleRename}>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="New team name"
+                className="w-full text-slate-700 placeholder:text-slate-500 border border-slate-200 rounded-2xl mb-6 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                autoFocus
+              />
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all"
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRenaming(false);
+                    setNewName(teamName);
+                  }}
+                  className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -220,19 +294,42 @@ const ManageGroups = ({ role }) => {
   const [view, setView] = useState('dashboard');
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [teamStats, setTeamStats] = useState({});
-  const teamNames = ['Team 1', 'Team 2', 'Team 3', 'Team 4'];
+  const [teamNames, setTeamNames] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  
+  const fetchAllStatsRef = useRef(null);
 
-  const fetchAllStats = async () => {
+  const fetchTeams = async () => {
     try {
-      // Since vehicle_type is in Profiles, we only need one table fetch!
-      const { data: profiles, error } = await supabase.from('Profiles').select('group, vehicle_type');
+      const { data, error } = await supabase
+        .from('groups')
+        .select('group_name')
+        .order('group_name', { ascending: true });
+
+      if (error) throw error;
+      const names = data?.map(g => g.group_name) || [];
+      setTeamNames(names);
+      await fetchAllStats(names);
+    } catch (err) {
+      console.error("Error fetching teams:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAllStats = async (teams) => {
+    try {
+      const { data: profiles, error } = await supabase
+        .from('Profiles')
+        .select('group, vehicle_type');
       
       if (error) throw error;
 
       const newStats = {};
-      teamNames.forEach(name => {
+      teams.forEach(name => {
         const teamMembers = profiles?.filter(m => m.group === name) || [];
-        // Get the mode from the first member found (assuming the group shares a mode)
         const currentMode = teamMembers.length > 0 ? teamMembers[0].vehicle_type : 'walk';
         
         newStats[name] = { 
@@ -247,12 +344,106 @@ const ManageGroups = ({ role }) => {
   };
 
   useEffect(() => {
-    fetchAllStats();
-  }, [view]);
+    fetchAllStatsRef.current = fetchAllStats;
+  }, []);
+
+  useEffect(() => {
+    fetchTeams();
+
+    const groupChannel = supabase
+      .channel('groups-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'groups' },
+        () => fetchTeams()
+      )
+      .subscribe();
+
+    const profileChannel = supabase
+      .channel('profile-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'Profiles' },
+        async () => {
+          if (fetchAllStatsRef.current) {
+            const { data } = await supabase
+              .from('groups')
+              .select('group_name')
+              .order('group_name', { ascending: true });
+            const names = data?.map(g => g.group_name) || [];
+            fetchAllStatsRef.current(names);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(groupChannel);
+      supabase.removeChannel(profileChannel);
+    };
+  }, []);
+
+  const handleCreateTeam = async (e) => {
+    e.preventDefault();
+    if (!newTeamName.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('groups')
+        .insert({ group_name: newTeamName });
+
+      if (error) throw error;
+      
+      setNewTeamName('');
+      setIsCreating(false);
+      fetchTeams();
+    } catch (err) {
+      alert("Failed to create team: " + err.message);
+    }
+  };
+
+  // ← NEW: Handle team rename
+  const handleRenameTeam = async (oldName, newName) => {
+    try {
+      // Update group name in groups table
+      const { error: groupError } = await supabase
+        .from('groups')
+        .update({ group_name: newName })
+        .eq('group_name', oldName);
+
+      if (groupError) throw groupError;
+
+      // Update all profiles that reference the old group name
+      const { error: profileError } = await supabase
+        .from('Profiles')
+        .update({ group: newName })
+        .eq('group', oldName);
+
+      if (profileError) throw profileError;
+
+      // Refresh teams
+      fetchTeams();
+    } catch (err) {
+      alert("Failed to rename team: " + err.message);
+    }
+  };
+
+  const handleDeleteTeam = async (teamName) => {
+    try {
+      const { error } = await supabase
+        .from('groups')
+        .delete()
+        .eq('group_name', teamName);
+
+      if (error) throw error;
+      fetchTeams();
+    } catch (err) {
+      alert("Failed to delete team: " + err.message);
+    }
+  };
 
   const handleUpdateTransport = async (teamName, newMode) => {
     try {
-      // Step 1: Update the Profiles table directly where group matches
       const { data, error } = await supabase
         .from('Profiles')
         .update({ vehicle_type: newMode })
@@ -263,9 +454,6 @@ const ManageGroups = ({ role }) => {
 
       if (data && data.length > 0) {
         console.log(`Updated ${data.length} profiles to ${newMode}`);
-        await fetchAllStats(); // Refresh the grid
-      } else {
-        alert("This group has no members to update.");
       }
     } catch (err) {
       console.error("Update Error:", err.message);
@@ -280,46 +468,95 @@ const ManageGroups = ({ role }) => {
   return (
     <div className="p-8 bg-[#FBFBFE] min-h-screen font-sans">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-10">
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Group Management</h1>
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-12 bg-indigo-600 rounded-full"></div>
-            <p className="text-slate-500 font-medium">Coordinate transportation modes and team assignments</p>
+        <div className="mb-10 flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Group Management</h1>
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-12 bg-indigo-600 rounded-full"></div>
+              <p className="text-slate-500 font-medium">Create Team and Manage Member's Groups</p>
+            </div>
           </div>
+          {role?.toLowerCase() === 'admin' && (
+            <button
+              onClick={() => setIsCreating(true)}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+            >
+              <Plus size={20} /> Create Team
+            </button>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {teamNames.map(t => (
-            <TeamCard 
-              key={t} 
-              teamName={t} 
-              role={role} 
-              stats={teamStats[t] || { total: 0, currentMode: 'walk' }} 
-              onUpdateTransport={handleUpdateTransport} 
-              onShowMembers={() => {
-                setSelectedTeam(t);
-                setView('detail');
-              }} 
-            />
-          ))}
-        </div>
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="animate-spin text-indigo-600" size={40} />
+          </div>
+        ) : teamNames.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {teamNames.map(t => (
+              <TeamCard 
+                key={t} 
+                teamName={t} 
+                role={role} 
+                stats={teamStats[t] || { total: 0, currentMode: 'walk' }} 
+                onUpdateTransport={handleUpdateTransport}
+                onDeleteTeam={handleDeleteTeam}
+                onRenameTeam={handleRenameTeam}
+                onShowMembers={() => {
+                  setSelectedTeam(t);
+                  setView('detail');
+                }} 
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-20">
+            <p className="text-slate-400 mb-4">No teams created yet</p>
+            {role?.toLowerCase() === 'admin' && (
+              <button
+                onClick={() => setIsCreating(true)}
+                className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700"
+              >
+                Create First Team
+              </button>
+            )}
+          </div>
+        )}
 
-        <div className="mt-12 p-8 bg-indigo-900 rounded-[40px] text-white flex flex-col md:flex-row justify-between items-center gap-6 shadow-2xl shadow-indigo-200">
-           <div>
-              <h3 className="text-xl font-bold mb-1">Need to add more teams?</h3>
-              <p className="text-indigo-200 text-sm">Contact the system administrator to expand the group list.</p>
-           </div>
-           <div className="flex -space-x-3">
-              {[1,2,3,4].map(i => (
-                <div key={i} className="w-12 h-12 rounded-full border-4 border-indigo-900 bg-indigo-500 flex items-center justify-center font-bold text-xs">
-                  T{i}
+        {isCreating && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+            <div className="bg-white p-8 rounded-[32px] w-full max-w-md shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+              <h3 className="text-xl font-bold text-slate-800 mb-6">Create New Team</h3>
+              <form onSubmit={handleCreateTeam}>
+                <input
+                  type="text"
+                  placeholder="Team name (e.g., Team 5, Group A)"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  className="w-full text-slate-700 placeholder:text-slate-500 border border-slate-200 rounded-2xl mb-6 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  autoFocus
+                />
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all"
+                  >
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreating(false);
+                      setNewTeamName('');
+                    }}
+                    className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-200 transition-all"
+                  >
+                    Cancel
+                  </button>
                 </div>
-              ))}
-              <div className="w-12 h-12 rounded-full border-4 border-indigo-900 bg-white/20 backdrop-blur-sm flex items-center justify-center font-bold text-xs">
-                +
-              </div>
-           </div>
-        </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

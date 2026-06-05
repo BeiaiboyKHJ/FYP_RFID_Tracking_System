@@ -24,6 +24,23 @@ const App = () => {
     if (savedToken) setToken(JSON.parse(savedToken));
   }, []);
 
+  // ✅ MOVED OUTSIDE useEffect - Define sound function at component level
+const playStatusChangeSound = (newStatus) => {
+  try {
+    let soundFile = '/correct.wav'; // Default for ALL checkpoints (A, B, C, D, E, ...)
+
+    if (newStatus === 'Missing') {
+      soundFile = '/wrong.mp3'; // Only different sound for Missing
+    }
+
+    const audio = new Audio(soundFile);
+    audio.volume = 0.6;
+    audio.play().catch(err => console.log("Audio blocked:", err));
+  } catch (err) {
+    console.log("Sound error:", err);
+  }
+};
+
   useEffect(() => {
     if (token) {
       sessionStorage.setItem('token', JSON.stringify(token));
@@ -37,39 +54,48 @@ const App = () => {
           { event: 'UPDATE', schema: 'public', table: 'Profiles', filter: `user_id=eq.${token.user.id}` },
           (payload) => {
             console.log('Profile updated:', payload.new);
-            setProfileData(payload.new); // Update Sidebar immediately when avatar changes
+            setProfileData(payload.new);
           }
         )
         .subscribe();
 
-const channel = supabase
-        .channel('vnfc-alerts')
-        .on(
-          'postgres_changes', 
-          { event: 'UPDATE', schema: 'public', table: 'Profiles' }, 
-          (payload) => {
-            console.log("REALTIME PAYLOAD:", payload);
+      // ✅ COMPLETE real-time listener with sound
+        const channel = supabase
+          .channel('vnfc-alerts')
+          .on('postgres_changes', 
+            { event: 'UPDATE', schema: 'public', table: 'Profiles' }, 
+            (payload) => {
+              console.log("REALTIME PAYLOAD:", payload);
 
-            // 1. Safe extraction (returns null if status wasn't part of this specific update)
-            const currentStatus = payload.new?.status ? String(payload.new.status).toUpperCase() : null;
-            
-            // 2. Grab whatever ID Supabase gives us (either the UUID or the Int PK)
-            const recordId = payload.new?.user_id || payload.new?.id;
+              const currentStatus = payload.new?.status 
+                ? String(payload.new.status).toUpperCase() 
+                : null;
+              const recordId = payload.new?.user_id || payload.new?.id;
 
-            if (!recordId) return; 
+              if (!recordId) return; 
+
+              // ✅ PLAY SOUND for ALL status changes (including reset to empty)
+              if (currentStatus !== undefined) {  // Changed from if (currentStatus)
+                if (currentStatus) {  // Only play sound if status is NOT empty
+                  playStatusChangeSound(currentStatus);
+                } else {
+                  // Optional: Play a "reset" sound when clearing status
+                  const audio = new Audio('/correct.wav');
+                  audio.volume = 0.3;  // Quieter for reset
+                  audio.play().catch(err => console.log("Audio blocked:", err));
+                }
+              }
 
             if (currentStatus === 'MISSING') {
               const fetchFullProfile = async (idToFetch) => {
                 try {
-                  // FIX: Dynamically check if idToFetch is a UUID or an Integer
-                  // This prevents the silent database crash
                   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idToFetch);
                   const searchColumn = isUUID ? 'user_id' : 'id';
 
                   const { data: profile, error } = await supabase
                     .from('Profiles')
                     .select('*')
-                    .eq(searchColumn, idToFetch) // Uses the safe column
+                    .eq(searchColumn, idToFetch)
                     .single();
 
                   if (error) throw error;
@@ -99,7 +125,6 @@ const channel = supabase
               fetchFullProfile(recordId);
 
             } else if (currentStatus && currentStatus !== 'MISSING') {
-              // This prevents alerts from disappearing if you edit their group while they are missing.
               setNotifications(prev => prev.filter(n => n.id !== (payload.new?.user_id || payload.old?.user_id)));
             }
           }

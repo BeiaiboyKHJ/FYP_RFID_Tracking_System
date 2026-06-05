@@ -12,52 +12,42 @@ const Homepage = ({ token }) => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // 1. Fetch Profile
+      
       const { data: { user } } = await supabase.auth.getUser();
+
       if (user) {
-        const { data: profileData } = await supabase
-          .from('Profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        setProfile(profileData);
-      }
+        // Fire all independent database requests simultaneously
+        const [profileRes, checkpointsRes, membersRes] = await Promise.all([
+          supabase.from('Profiles').select('*').eq('user_id', user.id).single(),
+          supabase.from('checkpoints').select('*').order('checkpoint_type', { ascending: true }),
+          supabase.from('Profiles').select('*')
+        ]);
 
-      // 2. Fetch Active Checkpoints
-      const { data: locData } = await supabase
-        .from('locations')
-        .select('*')
-        .order('created_at', { ascending: false });
+        if (profileRes.data) setProfile(profileRes.data);
+        
+        if (checkpointsRes.data) {
+          setCheckpoints(checkpointsRes.data);
+          
+          if (membersRes.data) {
+            const allMembers = membersRes.data;
+            const stats = {
+              total: allMembers.length,
+              missing: allMembers.filter(m => m.status === 'Missing').length,
+            };
 
-      if (locData) {
-        const uniqueTypes = {};
-        const activeCheckpoints = (locData || []).reduce((acc, curr) => {
-          if (!uniqueTypes[curr.checkpoint_type]) {
-            uniqueTypes[curr.checkpoint_type] = true;
-            acc.push(curr);
+            checkpointsRes.data.forEach(cp => {
+              stats[cp.checkpoint_type] = allMembers.filter(m => m.status === cp.checkpoint_type).length;
+            });
+
+            setMemberStats(stats);
+            setMissingMembers(allMembers.filter(m => m.status === 'Missing'));
           }
-          return acc;
-        }, []).sort((a, b) => a.checkpoint_type.localeCompare(b.checkpoint_type));
-
-        setCheckpoints(activeCheckpoints);
-
-        // 3. Fetch Members and Map to Stats
-        const { data: allMembers } = await supabase.from('Profiles').select('*');
-        if (allMembers) {
-          const stats = {
-            total: allMembers.length,
-            missing: allMembers.filter(m => m.status === 'Missing').length,
-          };
-          activeCheckpoints.forEach(cp => {
-            stats[cp.checkpoint_type] = allMembers.filter(m => m.status === cp.checkpoint_type).length;
-          });
-          setMemberStats(stats);
-          setMissingMembers(allMembers.filter(m => m.status === 'Missing'));
         }
       }
     } catch (error) {
-      console.error(error);
+      console.error("Error fetching dashboard data:", error);
     } finally {
+      // Ensures the loading screen turns off even if an error occurs
       setLoading(false);
     }
   };
@@ -71,7 +61,6 @@ const Homepage = ({ token }) => {
   }, [token]);
 
   const userStatus = profile?.status;
-  // SAFE CHECK: Find current location logic
   const currentLocation = checkpoints.find(cp => cp.checkpoint_type === userStatus) || null;
   const currentLocationAddress = currentLocation?.address || "Not Checked In";
 
@@ -156,7 +145,8 @@ const Homepage = ({ token }) => {
             <div className="absolute top-0 right-0 p-4 opacity-10 text-red-500">
               <AlertTriangle size={64} />
             </div>
-            <p className="text-red-400 text-xm font-bold uppercase tracking-wider mb-2">Missing / Overdue</p>
+            {/* Fixed the typo from text-xm to text-sm */}
+            <p className="text-red-400 text-sm font-bold uppercase tracking-wider mb-2">Missing / Overdue</p>
             <p className="text-4xl font-extrabold text-red-400">{memberStats.missing || 0}</p>
           </div>
 
@@ -180,14 +170,31 @@ const Homepage = ({ token }) => {
         </h2>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
           {checkpoints.map((cp) => (
-            <div key={cp.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-6 flex flex-col h-full hover:border-indigo-500/50 transition-colors">
+            <div key={cp.id} className={`border rounded-2xl p-6 flex flex-col h-full transition-colors ${
+              cp.is_exit
+                ? 'bg-orange-500/5 border-orange-500/30 hover:border-orange-500/60'
+                : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'
+            }`}>
               <div className="flex justify-between items-start mb-5">
-                <h3 className="text-lg font-bold text-white">Checkpoint {cp.checkpoint_type}</h3>
-                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider ${cp.is_exit ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
-                  {cp.is_exit ? 'Exit' : 'Waypoint'}
+                <div className="flex items-center gap-2">
+                  <h3 className={`text-lg font-bold ${cp.is_exit ? 'text-orange-300' : 'text-white'}`}>
+                    Checkpoint {cp.checkpoint_type}
+                  </h3>
+                  {cp.is_exit && (
+                    <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-widest bg-orange-500 text-white animate-pulse">
+                      EXIT
+                    </span>
+                  )}
+                </div>
+                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider ${
+                  cp.is_exit
+                    ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                    : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                }`}>
+                  {cp.is_exit ? '🚩 Exit Point' : 'Waypoint'}
                 </span>
               </div>
-              
+            
               <div className="space-y-3.5 text-sm mt-auto">
                 <div className="flex items-start gap-3 text-slate-300">
                   <MapPin size={16} className="text-slate-500 mt-0.5 shrink-0" /> 
