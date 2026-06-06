@@ -9,4 +9,4 @@ joblib
 scikit-learn
 requests
 python-dotenv
-scikit-learn
+scikit-learn==1.6.1
