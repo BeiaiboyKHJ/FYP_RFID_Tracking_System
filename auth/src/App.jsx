@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SignUp, Login, Homepage, Profile } from './pages';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import Sidebar, { SidebarItem } from './components/sidebar';
+import Sidebar, { SidebarItem } from './components/Sidebar';
 import { Home, Bell, User, Users, UserCog, MapPin, ChartPie, BarChart, LogOut } from 'lucide-react';
 import ManageGroups from './pages/ManageGroups';
 import MemberManagement from './pages/MemberManagement'; 
