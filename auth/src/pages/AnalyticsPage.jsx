@@ -9,6 +9,7 @@ const MODE_CONFIG = [
 ];
 
 const AnalyticsPage = ({ role }) => {
+  const FLASK_URL = import.meta.env.VITE_FLASK_URL || 'http://127.0.0.1:5000';
   const [viewMode, setViewMode]         = useState('walk');
   const [isPredicting, setIsPredicting] = useState(false);
   const [predictions, setPredictions]   = useState([]);
@@ -124,7 +125,7 @@ const AnalyticsPage = ({ role }) => {
         };
       }));
 
-      const response = await fetch("http://127.0.0.1:5000/predict", {
+      const response = await fetch(`${FLASK_URL}/predict`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: data_list })
       });
