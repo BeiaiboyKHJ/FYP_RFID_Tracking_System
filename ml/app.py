@@ -7,21 +7,33 @@ import os
 import sys
 import requests
 from datetime import datetime
-
+from dotenv import load_dotenv 
+ 
+load_dotenv()  
+ 
 print(sys.executable)
-
+ 
 app = Flask(__name__)
 CORS(app)
-
+ 
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, 'models')
+ 
 
-# Global Telegram Configuration Constants
-TELEGRAM_TOKEN = "8946329154:AAG6qwAo5x6MwrSFGcxcSeu4RGd6q4EnSNM"
-TELEGRAM_CHAT_ID = "1595765286"
-
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+ 
+# Warn if not set
+if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    print("⚠️ WARNING: Telegram credentials not found in environment variables!")
+    print("Set TELEGRAM_TOKEN and TELEGRAM_CHAT_ID in your .env file or environment.")
+ 
 def send_telegram_notification(message):
     """Send alert to Telegram when someone is marked Missing"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("❌ Telegram not configured - skipping notification")
+        return {"error": "Telegram not configured"}
+    
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         payload = {
@@ -33,15 +45,13 @@ def send_telegram_notification(message):
         return response.json()
     except Exception as e:
         print(f"Telegram error: {e}")
-
+ 
 @app.route('/update-member-status', methods=['POST'])
 def update_member_status():
     data = request.json
     user_id = data.get('user_id')
     new_status = data.get('status')
     username = data.get('username')
-    
-    # ... your code to update database ...
     
     if new_status and new_status.strip().lower() == 'missing':
         message = f"""
@@ -50,14 +60,14 @@ def update_member_status():
 👤 Member: <b>{username}</b>
 ⏰ Time: {datetime.now().strftime('%H:%M:%S')}
 📍 Status: <b>MISSING</b>
-
+ 
 <i>Immediate action required!</i>
         """
         send_telegram_notification(message)
     
     return {"status": "ok"}
-
-
+ 
+ 
 @app.route('/send-missing-alert', methods=['POST'])
 def send_missing_alert():
     data = request.json
@@ -65,10 +75,10 @@ def send_missing_alert():
     
     message = f"""
 🚨 <b>MISSING PERSON ALERT!</b>
-
+ 
 👤 <b>{username}</b> has been marked as MISSING
 ⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
+ 
 <i>Please take immediate action</i>
     """
     
