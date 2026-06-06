@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
+    "@supabase/supabase-js": "^2.107.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",
     "react": "^19.0.0-rc.1",
