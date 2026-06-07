@@ -3,6 +3,7 @@ import { supabase } from '../client';
 import { Search, Phone, Shield, User, MapPin, Loader2, CreditCard, Contact2, CheckCircle2 } from 'lucide-react';
 
 const MemberManagement = ({ role, currentUserId }) => {
+  const FLASK_URL = import.meta.env.VITE_FLASK_URL || 'http://127.0.0.1:5000';
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -139,7 +140,7 @@ const MemberManagement = ({ role, currentUserId }) => {
 
       if (newStatus === 'Missing') {
       try {
-        const response = await fetch('http://127.0.0.1:5000/send-missing-alert', {
+        const response = await fetch(`${FLASK_URL}/send-missing-alert`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
