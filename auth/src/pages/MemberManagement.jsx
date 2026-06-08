@@ -215,8 +215,32 @@ const MemberManagement = ({ role, currentUserId }) => {
             .update({ status: 'Missing' })
             .in('user_id', stragglerIds);
 
-          if (error) console.error("Database Update Error:", error.message);
-          else console.log("Successfully flagged stragglers as Missing.");
+          if (error) {console.error("Database Update Error:", error.message);
+          } else {
+
+            console.log("Successfully flagged stragglers as Missing.");
+
+            for (const member of stragglers) {
+              try {
+                await fetch(`${FLASK_URL}/send-missing-alert`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    username: member.username,
+                    userId: member.user_id,
+                    timestamp: new Date().toISOString()
+                  })
+                });
+              } catch (err) {
+                console.error(
+                  `Failed sending alert for ${member.username}:`,
+                  err
+                );
+              }
+            }
+          }
         } else {
           console.log("All members accounted for. No updates needed.");
         }
