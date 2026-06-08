@@ -35,6 +35,16 @@ const AnalyticsPage = ({ role }) => {
     return () => clearInterval(interval);
   }, [exitInfo]);
 
+  const formatExtraTime = (min) => {
+  if (min <= 0) return null;
+
+  const h = Math.floor(min / 60);
+  const m = Math.floor(min % 60);
+
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m} minutes`;
+};
+
   const calculateRoadDistance = async (lat1, lon1, lat2, lon2, transport = 'driving') => {
     if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
     try {
@@ -132,9 +142,16 @@ const AnalyticsPage = ({ role }) => {
       if (!response.ok) throw new Error(`Flask error: ${response.status}`);
 
       const result = await response.json();
-      const predictionsWithStatus = (result.predictions || []).map(p => ({
-        ...p, status: statusMap[p.id] || null
-      }));
+      const predictionsWithStatus = (result.predictions || []).map(p => {
+        const extraTime =
+          (p.time_needed_min ?? 0) - (p.deadline_min ?? 0);
+
+        return {
+          ...p,
+          status: statusMap[p.id] || null,
+          extra_time: extraTime
+        };
+      });
       setPredictions(predictionsWithStatus);
       setStats({ total: globalTotal || 0, alerts: predictionsWithStatus.filter(p => p.is_late).length });
 
@@ -323,12 +340,22 @@ useEffect(() => {
           </div>
         )}
 
-        <div className="px-6 py-4 border-b border-white/6 flex items-center justify-between">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-            Prediction Results — {viewMode === 'walk' ? 'Walking' : viewMode === 'vehicle' ? 'Vehicle' : 'Bus'}
-          </p>
-          <p className="text-xs text-gray-600">{predictions.length} member{predictions.length !== 1 ? 's' : ''}</p>
-        </div>
+            <div className="px-6 py-4 border-b border-white/6 flex items-center gap-3">
+
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+                Prediction Results — {viewMode === 'walk' ? 'Walking' : viewMode === 'vehicle' ? 'Vehicle' : 'Bus'}
+              </p>
+
+              <div className="px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center gap-1">
+                <span className="text-indigo-400 font-black text-sm">
+                  {predictions.length}
+                </span>
+                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">
+                  Members
+                </span>
+              </div>
+
+            </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -411,6 +438,11 @@ useEffect(() => {
                               />
                             </div>
                             <span className="text-[11px] font-mono text-gray-400 w-8">{p.risk}%</span>
+                            {p.extra_time > 0 && (
+                              <span className="text-[11px] font-mono text-red-400 ml-2">
+                                Extra Time Needed: {formatExtraTime(p.extra_time)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       )}
