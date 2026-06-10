@@ -9,7 +9,8 @@ const MemberManagement = ({ role, currentUserId }) => {
   const [loading, setLoading] = useState(true);
   const [isScanningMode, setIsScanningMode] = useState(false);
   const [availableCheckpoints, setAvailableCheckpoints] = useState([]);
-  const [availableGroups, setAvailableGroups] = useState([]);  // ← NEW
+  const [availableGroups, setAvailableGroups] = useState([]);
+  const [isResetting, setIsResetting] = useState(false);
  
   const [scanModal, setScanModal] = useState({
     isOpen: false,
@@ -68,7 +69,7 @@ const MemberManagement = ({ role, currentUserId }) => {
     return () => supabase.removeChannel(subscription);
   }, []);
 
-  // NEW: Fetch groups from 'groups' table dynamically
+  // Fetch groups from 'groups' table dynamically
   useEffect(() => {
     const fetchGroups = async () => {
       const { data, error } = await supabase
@@ -281,6 +282,54 @@ const MemberManagement = ({ role, currentUserId }) => {
     }
   };
 
+  const handleResetAllMembers = async () => {
+    if (role !== 'admin') {
+      alert('Only admins can reset member status');
+      return;
+    }
+
+    // Ask for confirmation (important for destructive action)
+    const confirmed = window.confirm(
+      `⚠️ Are you sure?\n\nThis will reset the status of all ${members.length} members to "Not Started".\n\nThis action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setIsResetting(true);
+
+    try {
+      // Update all members in database to null status (Not Started)
+      const { error } = await supabase
+        .from('Profiles')
+        .update({ status: null })
+        .neq('status', 'Never'); // Update all except a fake status (basically all)
+
+      if (error) {
+        console.error('Reset Error:', error);
+        alert('Failed to reset: ' + error.message);
+        setIsResetting(false);
+        return;
+      }
+
+      // Update local state immediately (no need to wait for subscription)
+      setMembers(prevMembers =>
+        prevMembers.map(member => ({
+          ...member,
+          status: null
+        }))
+      );
+
+      console.log('✅ All members reset to "Not Started"');
+      alert('✅ All members have been reset to "Not Started"');
+
+    } catch (err) {
+      console.error('Reset Exception:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const closeModal = async () => {
     if (scanModal.status === 'scanning') {
       setIsScanningMode(false);
@@ -307,9 +356,14 @@ const MemberManagement = ({ role, currentUserId }) => {
     }
   };
 
-  const filteredMembers = members.filter(m =>
-    m.username?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredMembers = members
+    .filter(m => m.username?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      const groupA = (a.group || 'Unassigned').toLowerCase();
+      const groupB = (b.group || 'Unassigned').toLowerCase();
+      if (groupA !== groupB) return groupA.localeCompare(groupB);
+      return (a.username || '').localeCompare(b.username || '');
+    });
 
   const adminMember = members.find(m => m.role === 'admin');
 
@@ -332,21 +386,45 @@ const MemberManagement = ({ role, currentUserId }) => {
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen relative">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">
             {role === 'admin' ? "Member Management" : "Member Directory"}
           </h1>
         </div>
-        {role === 'member' && adminMember && (
-          <div className="bg-white border border-red-100 p-3 rounded-xl shadow-sm flex items-center gap-3">
-            <div className="bg-red-500 p-2 rounded-lg text-white"><Phone size={18} /></div>
-            <div>
-              <p className="text-[10px] uppercase font-bold text-red-600 tracking-wider">Admin Support</p>
-              <p className="text-sm font-bold text-slate-800">{adminMember.phone_number || "No contact set"}</p>
+        
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          {/* Reset All Button - Full width on mobile */}
+          {role === 'admin' && (
+            <button
+              onClick={handleResetAllMembers}
+              disabled={isResetting}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-500/50 text-white font-bold rounded-xl transition-all shadow-md text-sm w-full sm:w-auto"
+              title="Reset all members to Not Started status"
+            >
+              {isResetting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                <>
+                  🔄 Reset All
+                </>
+              )}
+            </button>
+          )}
+
+          {role === 'member' && adminMember && (
+            <div className="bg-white border border-red-100 p-3 rounded-xl shadow-sm flex items-center gap-3">
+              <div className="bg-red-500 p-2 rounded-lg text-white"><Phone size={18} /></div>
+              <div>
+                <p className="text-[10px] uppercase font-bold text-red-600 tracking-wider">Admin Support</p>
+                <p className="text-sm font-bold text-slate-800">{adminMember.phone_number || "No contact set"}</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="relative mb-6 text-stone-600">
