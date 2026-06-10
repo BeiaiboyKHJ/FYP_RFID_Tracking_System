@@ -77,6 +77,51 @@ const LocationManagement = ({ userRole }) => {
     return String.fromCharCode(labels[labels.length - 1].charCodeAt(0) + 1);
   };
 
+  const getCurrentLocation = () => {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported by your browser.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+
+      const pos = [lat, lon];
+      setTempMarker(pos);
+
+      // Reverse geocoding using OpenStreetMap
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+        );
+
+        const data = await response.json();
+
+        const weather = await fetchWeather(lat, lon);
+
+        setFormData(prev => ({
+          ...prev,
+          address: data.display_name || `${lat}, ${lon}`,
+          weather
+        }));
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    (error) => {
+      alert("Unable to retrieve your location.");
+      console.error(error);
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    }
+  );
+};
+
   const fetchActiveNodes = async () => {
     setLoading(true);
     // REMOVED .is('user_id', null) since checkpoints master table doesn't track specific users
@@ -391,7 +436,7 @@ const LocationManagement = ({ userRole }) => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <label className="text-[10px] font-bold text-slate-400 tracking-wider block mb-1.5 uppercase">Node ID</label>
                     <input
@@ -440,6 +485,13 @@ const LocationManagement = ({ userRole }) => {
                   <p className="text-[10px] text-slate-400 font-medium italic">Alternatively, drop a pin by selecting any point directly across the map space.</p>
                 </div>
 
+                <button
+                  onClick={getCurrentLocation}
+                  className="w-full py-2 bg-green-600 text-white rounded-xl font-semibold text-xs"
+                >
+                  Use Current Location
+                </button>
+
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 tracking-wider block mb-1.5 uppercase">Assigned Target Address Name</label>
                   <textarea
@@ -479,7 +531,7 @@ const LocationManagement = ({ userRole }) => {
           {/* Ordered Route Cards Container List */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
             <div className="flex justify-between items-center px-1">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ordered Route Manifest</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Checkpoints</p>
               <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{activeNodes.length} Stations</span>
             </div>
 
