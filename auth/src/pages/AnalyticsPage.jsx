@@ -206,7 +206,7 @@ useEffect(() => {
   const isExpired = timeLeft === 'Expired';
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white p-6 lg:p-10" style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif" }}>
+    <div className="min-h-screen bg-taupe-300 text-black p-6 lg:p-10" style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif" }}>
 
       {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10">
@@ -215,11 +215,11 @@ useEffect(() => {
             <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-500/20">
               <BrainCircuit className="text-indigo-400" size={20} />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">
-              Late Occurrence & Analytics
+            <h1 className="text-2xl font-bold tracking-tight text-black">
+              Member's Latest Location and Late Prediction
             </h1>
           </div>
-          <p className="text-gray-500 text-sm ml-11">Real-time AI Delay Prediction and Risk Assessment</p>
+          <p className="text-gray-800 text-sm ml-11">Real-time AI Delay Prediction and Risk Assessment</p>
         </div>
 
         {/* Mode Switcher */}
@@ -230,8 +230,8 @@ useEffect(() => {
               onClick={() => handleModeChange(m.id)}
               className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all duration-200 text-xs font-semibold ${
                 viewMode === m.id
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
-                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                  ? 'bg-rose-400 text-black shadow-lg shadow-taupe-500/25'
+                  : 'text-gray-300 hover:text-gray-300 hover:bg-white/5'
               }`}
             >
               {m.icon} {m.label}
@@ -244,12 +244,12 @@ useEffect(() => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
 
         {/* Total Members */}
-        <div className="bg-[#111] border border-white/8 rounded-2xl p-5 flex items-center gap-4">
-          <div className="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 shrink-0">
+        <div className="bg-taupe-400 border border-black rounded-2xl p-5 flex items-center gap-4">
+          <div className="p-3 bg-blue-800/10 rounded-xl border border-blue-900 shrink-0">
             <Activity className="text-blue-400" size={18} />
           </div>
           <div>
-            <p className="text-[11px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">
+            <p className="text-[11px] text-black uppercase tracking-widest font-semibold mb-0.5">
               Total Members
             </p>
             <p className="text-3xl font-bold tracking-tight">{stats.total}</p>
@@ -257,16 +257,16 @@ useEffect(() => {
         </div>
 
         {/* Risk Alerts */}
-        <div className={`border rounded-2xl p-5 flex items-center gap-4 transition-all duration-500 ${
-          stats.alerts > 0 ? 'bg-red-500/5 border-red-500/20' : 'bg-[#111] border-white/8'
+        <div className={`border rounded-2xl border-3 p-5 flex items-center gap-4 transition-all duration-500 ${
+          stats.alerts > 0 ? 'bg-red-500/5 border-red-600' : 'bg-taupe-400 border-black'
         }`}>
-          <div className={`p-3 rounded-xl border shrink-0 ${
-            stats.alerts > 0 ? 'bg-red-500/10 border-red-500/20' : 'bg-gray-500/10 border-gray-500/20'
+          <div className={`p-3 rounded-xl border border-3 shrink-0 ${
+            stats.alerts > 0 ? 'bg-red-500/10 border-red-500' : 'bg-gray-500/10 border-gray-500/20'
           }`}>
             <ShieldAlert className={stats.alerts > 0 ? 'text-red-400' : 'text-gray-500'} size={18} />
           </div>
           <div>
-            <p className="text-[11px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">Risk Alerts</p>
+            <p className="text-[11px] text-black uppercase tracking-widest font-semibold mb-0.5">Risk Alerts</p>
             <p className={`text-3xl font-bold tracking-tight ${stats.alerts > 0 ? 'text-red-400' : ''}`}>
               {stats.alerts}
             </p>
@@ -276,30 +276,30 @@ useEffect(() => {
         {/* Exit Checkpoint / Countdown */}
         {exitInfo ? (
           <div className={`border rounded-2xl p-5 transition-all duration-500 ${
-            isExpired ? 'bg-red-500/5 border-red-500/30' : 'bg-orange-500/5 border-orange-500/20'
+            isExpired ? 'bg-red-500/5 border-red-600 border-3' : 'bg-taupe-200 border-orange-800 border-3'
           }`}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className={`p-2 rounded-lg border ${
-                  isExpired ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20'
+                  isExpired ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-800/10 border-orange-800/20'
                 }`}>
                   <Flag className={isExpired ? 'text-red-400' : 'text-orange-400'} size={14} />
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Exit Point</p>
-                  <p className="text-sm font-bold text-white">Checkpoint {exitInfo.checkpoint_type}</p>
+                  <p className="text-[10px] text-black uppercase tracking-widest font-semibold">Exit Point</p>
+                  <p className="text-sm font-bold text-green-500">Checkpoint {exitInfo.checkpoint_type}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">Time Left</p>
+                <p className="text-[10px] text-black uppercase tracking-widest font-semibold mb-0.5">Time Left</p>
                 <p className={`text-lg font-bold font-mono tabular-nums ${
-                  isExpired ? 'text-red-400' : 'text-emerald-400'
+                  isExpired ? 'text-red-400' : 'text-green-500'
                 }`}>
                   {timeLeft || '—'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-gray-500">
+            <div className="flex items-center gap-2 text-[11px] text-black">
               <Clock size={11} />
               <span>
                 {exitInfo.end_time
@@ -330,9 +330,9 @@ useEffect(() => {
       </div>
 
       {/* Prediction Table */}
-      <div className="bg-[#111] rounded-2xl border border-white/8 overflow-hidden relative">
+      <div className="bg-stone-200 rounded-2xl border border-white/8 overflow-hidden relative">
         {isPredicting && (
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-20 flex items-center justify-center flex-col gap-3">
+          <div className="absolute inset-0 bg-blue/70 backdrop-blur-sm z-20 flex items-center justify-center flex-col gap-3">
             <Loader2 className="animate-spin text-indigo-400" size={32} />
             <p className="text-xs font-semibold tracking-[0.15em] text-gray-400 uppercase">
               Running prediction model...
@@ -342,15 +342,15 @@ useEffect(() => {
 
             <div className="px-6 py-4 border-b border-white/6 flex items-center gap-3">
 
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+              <p className="text-[18px] font-bold text-black uppercase tracking-widest">
                 Prediction Results — {viewMode === 'walk' ? 'Walking' : viewMode === 'vehicle' ? 'Vehicle' : 'Bus'}
               </p>
 
               <div className="px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center gap-1">
-                <span className="text-indigo-400 font-black text-sm">
+                <span className="text-indigo-700 font-black text-sm">
                   {predictions.length}
                 </span>
-                <span className="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
                   Members
                 </span>
               </div>
@@ -361,9 +361,9 @@ useEffect(() => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-white/5">
-                <th className="px-6 py-3 text-[15px] font-semibold text-gray-200 uppercase tracking-widest">Member</th>
-                <th className="px-6 py-3 text-[15px] font-semibold text-gray-200 uppercase tracking-widest">AI Prediction</th>
-                <th className="px-6 py-3 text-[15px] font-semibold text-gray-200 uppercase tracking-widest">Risk</th>
+                <th className="px-6 py-3 text-[18px] font-bold text-black uppercase tracking-widest">Member</th>
+                <th className="px-6 py-3 text-[18px] font-bold text-black uppercase tracking-widest">AI Prediction</th>
+                <th className="px-6 py-3 text-[18px] font-bold text-black uppercase tracking-widest">Risk</th>
               </tr>
             </thead>
             <tbody>
@@ -371,8 +371,8 @@ useEffect(() => {
                 <tr>
                   <td colSpan="3" className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center gap-3 opacity-30">
-                      <Activity size={36} className="text-gray-600" />
-                      <p className="text-sm font-medium text-gray-500">
+                      <Activity size={36} className="text-black" />
+                      <p className="text-sm font-medium text-black">
                         No members found for {viewMode} mode
                       </p>
                     </div>
@@ -394,8 +394,8 @@ useEffect(() => {
                           'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]'
                         }`} />
                         <div>
-                          <p className="text-sm font-semibold text-white leading-tight">{p.label}</p>
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded mt-0.5 inline-block ${
+                          <p className="text-sm font-semibold text-black leading-tight">{p.label}</p>
+                          <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded mt-0.5 inline-block ${
                             !p.status            ? 'text-gray-600 bg-gray-600/10' :
                             p.status === 'Missing' ? 'text-red-400 bg-red-400/10' :
                                                      'text-indigo-400 bg-indigo-400/10'
@@ -407,7 +407,7 @@ useEffect(() => {
                     </td>
 
                     <td className="px-6 py-4">
-                      <span className="text-[11px] font-mono text-gray-400 bg-white/5 border border-white/8 px-3 py-1.5 rounded-lg leading-relaxed">
+                      <span className="text-[14px] font-mono text-black bg-black/5 border border-white/8 px-3 py-1.5 rounded-lg leading-relaxed">
                         {p.info || 'Analyzing...'} | Left: {timeLeft}
                       </span>
                     </td>
@@ -427,7 +427,7 @@ useEffect(() => {
                             {p.is_late ? '⚠ Delay Risk' : '✓ On Track'}
                           </span>
                           <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div className="w-16 h-1.5 bg-white border border-gray-600 border-2 rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full transition-all duration-500 ${
                                   p.risk > 75 ? 'bg-red-500' :
@@ -437,9 +437,9 @@ useEffect(() => {
                                 style={{ width: `${p.risk}%` }}
                               />
                             </div>
-                            <span className="text-[11px] font-mono text-gray-400 w-8">{p.risk}%</span>
+                            <span className="text-[14px] text-bold font-mono text-gray-400 w-8">{p.risk}%</span>
                             {p.extra_time > 0 && (
-                              <span className="text-[11px] font-mono text-red-400 ml-2">
+                              <span className="text-[14px] text-bold font-mono text-red-400 ml-2">
                                 Extra Time Needed: {formatExtraTime(p.extra_time)}
                               </span>
                             )}
