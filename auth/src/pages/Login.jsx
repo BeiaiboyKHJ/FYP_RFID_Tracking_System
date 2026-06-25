@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../client';
 import { Mail, Lock, LogIn, Loader } from 'lucide-react';
 
-const Login = ({ setToken }) => {
+const Login = () => {
   let navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -23,25 +23,16 @@ const Login = ({ setToken }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
       });
 
       if (error) throw error;
 
-      const { data: profileData } = await supabase
-        .from('Profiles')
-        .select('*')
-        .eq('user_id', data.user.id)
-        .single();
-
-      const tokenWithProfile = {
-        ...data,
-        userProfile: profileData
-      };
-
-      setToken(tokenWithProfile);
+      // No need to manually fetch the profile or call setToken here —
+      // App.jsx's onAuthStateChange listener picks up the new session
+      // automatically and fetches the profile via fetchUserRole().
       navigate('/homepage');
     } catch (error) {
       alert(error.message || error);
@@ -51,10 +42,9 @@ const Login = ({ setToken }) => {
   }
 
   return (
-    // Added centering classes here
     <div className="min-h-screen flex items-center justify-center bg-rose-50 p-4">
       <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-sm border border-slate-300">
-        
+
         <div className="text-center mb-8">
            <h1 className="text-2xl font-bold text-slate-800 font-sans">Login</h1>
         </div>
@@ -62,7 +52,6 @@ const Login = ({ setToken }) => {
         <form onSubmit={handleSubmit} className='space-y-6'>
           {/* Email Input */}
           <div className='space-y-2'>
-            {/* FIXED: Added missing quote after ml-1 */}
             <label className="text-sm font-semibold text-slate-700 ml-1">Email Address</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -93,11 +82,11 @@ const Login = ({ setToken }) => {
             </div>
           </div>
 
-          {/* Submit Button */}
-          <button 
+          {/* Submit Button — single consistent color, no dangling hover: */}
+          <button
             type='submit'
             disabled={loading}
-            className="w-full bg-blue-500 text-white py-3 rounded-xl hover: font-bold bg-teal-700 hover:bg-rose-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all flex justify-center items-center"
+            className="w-full bg-teal-700 hover:bg-teal-800 text-white py-3 rounded-xl font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all flex justify-center items-center"
           >
             {loading ? <Loader className="animate-spin" size={20} /> : "Submit"}
           </button>
@@ -109,8 +98,8 @@ const Login = ({ setToken }) => {
             Sign Up
           </Link>
         </div>
-      </div> 
-    </div> 
+      </div>
+    </div>
   );
 };
 

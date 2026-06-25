@@ -4,7 +4,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import Sidebar, { SidebarItem } from './components/Sidebar';
 import { Home, Bell, User, Users, UserCog, MapPin, ChartPie, BarChart, LogOut } from 'lucide-react';
 import ManageGroups from './pages/ManageGroups';
-import MemberManagement from './pages/MemberManagement'; 
+import MemberManagement from './pages/MemberManagement';
 import LocationManagement from './pages/LocationManagement';
 import NotificationPage from './pages/NotificationPage';
 import SchedulePage from './pages/SchedulePage';
@@ -13,40 +13,61 @@ import RouteManagement from './pages/RouteManagement';
 import { supabase } from './client';
 
 const App = () => {
-  const [token, setToken] = useState(false);
+  const [token, setToken] = useState(null);
   const [role, setRole] = useState(null);
   const [notifications, setNotifications] = useState([]);
-  const [profileData, setProfileData] = useState(null); 
+  const [profileData, setProfileData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ── Auth session handling (Supabase-managed, not sessionStorage) ──
   useEffect(() => {
-    const savedToken = sessionStorage.getItem('token');
-    if (savedToken) setToken(JSON.parse(savedToken));
+    // 1. Get existing session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setToken(session);
+      setLoading(false);
+    });
+
+    // 2. Listen for login/logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setToken(session);
+        setLoading(false);
+
+        // If logged out, clear everything
+        if (!session) {
+          setRole(null);
+          setProfileData(null);
+          setNotifications([]);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  // ✅ MOVED OUTSIDE useEffect - Define sound function at component level
-const playStatusChangeSound = (newStatus) => {
-  try {
-    let soundFile = '/correct.wav'; // Default for ALL checkpoints (A, B, C, D, E, ...)
+  // Define sound function at component level (not inside useEffect)
+  const playStatusChangeSound = (newStatus) => {
+    try {
+      let soundFile = '/correct.wav'; // Default for ALL checkpoints (A, B, C, D, E, ...)
 
-    if (newStatus === 'Missing') {
-      soundFile = '/wrong.mp3'; // Only different sound for Missing
+      if (newStatus === 'Missing') {
+        soundFile = '/wrong.mp3'; // Only different sound for Missing
+      }
+
+      const audio = new Audio(soundFile);
+      audio.volume = 0.6;
+      audio.play().catch(err => console.log("Audio blocked:", err));
+    } catch (err) {
+      console.log("Sound error:", err);
     }
-
-    const audio = new Audio(soundFile);
-    audio.volume = 0.6;
-    audio.play().catch(err => console.log("Audio blocked:", err));
-  } catch (err) {
-    console.log("Sound error:", err);
-  }
-};
+  };
 
   useEffect(() => {
     if (token) {
-      sessionStorage.setItem('token', JSON.stringify(token));
       fetchUserRole();
-      fetchInitialMissing(); 
+      fetchInitialMissing();
 
       const profileSubscription = supabase
         .channel('public:Profiles')
@@ -60,32 +81,32 @@ const playStatusChangeSound = (newStatus) => {
         )
         .subscribe();
 
-      // ✅ COMPLETE real-time listener with sound
-        const channel = supabase
-          .channel('vnfc-alerts')
-          .on('postgres_changes', 
-            { event: 'UPDATE', schema: 'public', table: 'Profiles' }, 
-            (payload) => {
-              console.log("REALTIME PAYLOAD:", payload);
+      // Real-time listener with sound for status changes
+      const channel = supabase
+        .channel('vnfc-alerts')
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'Profiles' },
+          (payload) => {
+            console.log("REALTIME PAYLOAD:", payload);
 
-              const currentStatus = payload.new?.status 
-                ? String(payload.new.status).toUpperCase() 
-                : null;
-              const recordId = payload.new?.user_id || payload.new?.id;
+            const currentStatus = payload.new?.status
+              ? String(payload.new.status).toUpperCase()
+              : null;
+            const recordId = payload.new?.user_id || payload.new?.id;
 
-              if (!recordId) return; 
+            if (!recordId) return;
 
-              // ✅ PLAY SOUND for ALL status changes (including reset to empty)
-              if (currentStatus !== undefined) {  // Changed from if (currentStatus)
-                if (currentStatus) {  // Only play sound if status is NOT empty
-                  playStatusChangeSound(currentStatus);
-                } else {
-                  // Optional: Play a "reset" sound when clearing status
-                  const audio = new Audio('/correct.wav');
-                  audio.volume = 0.3;  // Quieter for reset
-                  audio.play().catch(err => console.log("Audio blocked:", err));
-                }
+            // Play sound for ALL status changes (including reset to empty)
+            if (currentStatus !== undefined) {
+              if (currentStatus) {
+                playStatusChangeSound(currentStatus);
+              } else {
+                // Quieter "reset" sound when clearing status
+                const audio = new Audio('/correct.wav');
+                audio.volume = 0.3;
+                audio.play().catch(err => console.log("Audio blocked:", err));
               }
+            }
 
             if (currentStatus === 'MISSING') {
               const fetchFullProfile = async (idToFetch) => {
@@ -103,7 +124,7 @@ const playStatusChangeSound = (newStatus) => {
 
                   if (profile) {
                     const newAlert = {
-                      id: profile.user_id, 
+                      id: profile.user_id,
                       type: 'MISSING',
                       title: 'Member Reported Missing',
                       name: profile.username || 'Unknown',
@@ -122,7 +143,7 @@ const playStatusChangeSound = (newStatus) => {
                   console.error("Fetch Error:", err.message);
                 }
               };
-              
+
               fetchFullProfile(recordId);
 
             } else if (currentStatus && currentStatus !== 'MISSING') {
@@ -139,14 +160,42 @@ const playStatusChangeSound = (newStatus) => {
     }
   }, [token]);
 
+  // ── Fetch role, with auto-create fallback if profile is missing ──
   const fetchUserRole = async () => {
     if (!token?.user?.id) return;
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from('Profiles')
       .select('*')
       .eq('user_id', token.user.id)
-      .single();
-    if (data) {setRole(data.role); setProfileData(data);}
+      .maybeSingle();
+
+    if (error) {
+      console.error('fetchUserRole error:', error);
+      return;
+    }
+
+    if (data) {
+      setRole(data.role);
+      setProfileData(data);
+    } else {
+      console.warn('No profile found for user:', token.user.id);
+      // Profile missing — create it
+      const { error: insertError } = await supabase
+        .from('Profiles')
+        .insert({
+          user_id: token.user.id,
+          email: token.user.email,
+          username: token.user.user_metadata?.full_name || 'New User',
+          role: 'member',
+        });
+
+      if (insertError) {
+        console.error('Auto profile create failed:', insertError);
+      } else {
+        fetchUserRole(); // retry after creating
+      }
+    }
   };
 
   const fetchInitialMissing = async () => {
@@ -174,12 +223,23 @@ const playStatusChangeSound = (newStatus) => {
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('token');
-    setToken(false);
+  // ── Logout: actually invalidate the Supabase session ──
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setToken(null);
     setRole(null);
+    setProfileData(null);
     navigate('/');
   };
+
+  // ── Loading screen while session is being checked ──
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#2D2926]">
+        <p className="text-white text-lg">Loading...</p>
+      </div>
+    );
+  }
 
   // Auth Guard
   if (!token) {
@@ -194,39 +254,39 @@ const playStatusChangeSound = (newStatus) => {
 
   return (
     <div className="flex min-h-screen bg-[#2D2926]">
-      <Sidebar 
-      userName={profileData?.username || "User"} 
-      userEmail={token?.user?.email} 
-      role={role}
-      avatarUrl={profileData?.avatar_url} 
+      <Sidebar
+        userName={profileData?.username || "User"}
+        userEmail={token?.user?.email}
+        role={role}
+        avatarUrl={profileData?.avatar_url}
       >
-        <SidebarItem 
-          icon={<Home size={20} />} text="Home" 
-          onClick={() => navigate('/homepage')} active={location.pathname === '/homepage'} 
+        <SidebarItem
+          icon={<Home size={20} />} text="Home"
+          onClick={() => navigate('/homepage')} active={location.pathname === '/homepage'}
         />
-        <SidebarItem 
-          icon={<Bell size={20} />} text="Notifications" 
+        <SidebarItem
+          icon={<Bell size={20} />} text="Notifications"
           onClick={() => navigate('/notifications')} active={location.pathname === '/notifications'}
-          alert={notifications.length > 0} 
-          badgeCount={notifications.length} 
+          alert={notifications.length > 0}
+          badgeCount={notifications.length}
         />
-        <SidebarItem 
-          icon={<User size={20} />} text="Profile" 
+        <SidebarItem
+          icon={<User size={20} />} text="Profile"
           onClick={() => navigate('/profile')} active={location.pathname === '/profile'}
         />
-        
+
         <hr className="my-3 border-slate-800 opacity-20" />
-        
+
         {role === 'admin' && (
-          <SidebarItem 
-            icon={<Users size={20} />} text="Manage Groups" 
+          <SidebarItem
+            icon={<Users size={20} />} text="Manage Groups"
             onClick={() => navigate('/manage-groups')} active={location.pathname === '/manage-groups'}
           />
         )}
 
-        <SidebarItem 
-          icon={role === 'admin' ? <UserCog size={20} /> : <Users size={20} />} 
-          text={role === 'admin' ? "Manage Members" : "Members"} 
+        <SidebarItem
+          icon={role === 'admin' ? <UserCog size={20} /> : <Users size={20} />}
+          text={role === 'admin' ? "Manage Members" : "Members"}
           onClick={() => navigate('/members')} active={location.pathname === '/members'}
         />
 
@@ -236,13 +296,13 @@ const playStatusChangeSound = (newStatus) => {
           onClick={() => navigate('/manage-location')} active={location.pathname === '/manage-location'}
         />
 
-        <SidebarItem 
-          icon={<BarChart size={20} />} text="Schedule" 
+        <SidebarItem
+          icon={<BarChart size={20} />} text="Schedule"
           onClick={() => navigate('/schedule')} active={location.pathname === '/schedule'}
         />
 
-        <SidebarItem 
-          icon={<ChartPie size={20} />} text="Analytics" 
+        <SidebarItem
+          icon={<ChartPie size={20} />} text="Analytics"
           onClick={() => navigate('/analytics')} active={location.pathname === '/analytics'}
         />
 
@@ -257,18 +317,18 @@ const playStatusChangeSound = (newStatus) => {
 
       <main className="flex-1 overflow-y-auto text-stone-100">
         <div className="drop-shadow-[0_2px_8px_rgba(255,255,255,0.15)]">
-        <Routes>
-          <Route path="/homepage" element={<Homepage token={token} />} />
-          <Route path="/profile" element={<Profile token={token} />} />
-          {role === 'admin' && <Route path="/manage-groups" element={<ManageGroups role={role} />} />}
-          <Route path="/members" element={<MemberManagement role={role} currentUserId={token.user.id} />} />
-          <Route path="/manage-location" element={<LocationManagement userRole={role} />} />
-          <Route path="/notifications" element={<NotificationPage notifications={notifications} setNotifications={setNotifications} />} /> 
-          <Route path="/schedule" element={<SchedulePage role={role} />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/create-route/:tourId" element={<RouteManagement />} />
-          <Route path="*" element={<Navigate to="/homepage" />} />
-        </Routes>
+          <Routes>
+            <Route path="/homepage" element={<Homepage token={token} />} />
+            <Route path="/profile" element={<Profile token={token} />} />
+            {role === 'admin' && <Route path="/manage-groups" element={<ManageGroups role={role} />} />}
+            <Route path="/members" element={<MemberManagement role={role} currentUserId={token.user.id} />} />
+            <Route path="/manage-location" element={<LocationManagement userRole={role} />} />
+            <Route path="/notifications" element={<NotificationPage notifications={notifications} setNotifications={setNotifications} />} />
+            <Route path="/schedule" element={<SchedulePage role={role} />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/create-route/:tourId" element={<RouteManagement />} />
+            <Route path="*" element={<Navigate to="/homepage" />} />
+          </Routes>
         </div>
       </main>
     </div>
