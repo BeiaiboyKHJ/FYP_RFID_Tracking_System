@@ -98,20 +98,23 @@ def format_minutes(minutes):
     return f"{m}m"
 
 # --- Model placeholders ---
-walk_speed_model  = None
-walk_speed_scaler = None
-walk_late_model   = None
-vehicle_model     = None
-vehicle_scaler    = None
+walk_speed_model     = None
+walk_speed_scaler    = None
+walk_late_model      = None
+vehicle_speed_model  = None
+vehicle_speed_scaler = None
 
 try:
     print(f"Loading from: {MODELS_DIR}")
     print(f"Files found: {os.listdir(MODELS_DIR)}")
-    walk_speed_model  = load_asset('gait_speed_virtual_sensor.pkl')
-    walk_speed_scaler = load_asset('gait_scaler.pkl')
-    walk_late_model   = load_asset('rfid_random_forest.pkl')
-    vehicle_model     = load_asset('travel_time_rf_model.pkl')
-    vehicle_scaler    = load_asset('travel_time_scaler.pkl')
+    walk_speed_model     = load_asset('gait_speed_virtual_sensor.pkl')
+    walk_speed_scaler    = load_asset('gait_scaler.pkl')
+    walk_late_model      = load_asset('rfid_random_forest.pkl')
+    # Vehicle SPEED model (km/h) -- trained on Gradient Boosting,
+    # verified leak-free: features = [distance(km), rating,
+    # rating_weather, car_or_bus, day, hour]
+    vehicle_speed_model  = load_asset('vehicle_speed_gb_model.pkl')
+    vehicle_speed_scaler = load_asset('vehicle_speed_scaler.pkl')
     print("All AI assets loaded successfully!")
 except Exception as e:
     print(f"Error loading AI assets: {e}")
@@ -157,6 +160,18 @@ def predict_walking(item):
 
 
 def predict_vehicle(item):
+    """
+    Mirrors predict_walking's pattern: predict SPEED first, then derive
+    time_needed = distance / speed, then risk = time_needed / deadline.
+
+    UNIT NOTES (verified against training data via df.describe(), do
+    not change without re-checking):
+      - Frontend sends `distance` in METERS.
+      - The model was trained on `distance` in KILOMETERS.
+      - The model predicts `speed` in KM/H.
+    So distance is converted m -> km before scaling/predicting, and the
+    resulting time is computed in hours then converted to minutes.
+    """
     now        = datetime.now()
     transport  = item.get('transport_mode', 'vehicle').lower()
     car_or_bus = 1 if transport == 'bus' else 0
@@ -167,8 +182,12 @@ def predict_vehicle(item):
     if deadline_min <= 0:
         return 1.0, 9999, 9999
 
+    distance_km = distance_m / 1000.0
+
+    # Feature order MUST match scaler.feature_names_in_ exactly:
+    # ['distance', 'rating', 'rating_weather', 'car_or_bus', 'day', 'hour']
     raw = pd.DataFrame([{
-        'distance': distance_m,
+        'distance': distance_km,
         'rating': 3,
         'rating_weather': 3,
         'car_or_bus': car_or_bus,
@@ -176,20 +195,26 @@ def predict_vehicle(item):
         'hour': now.hour,
     }])
 
-    scaled = vehicle_scaler.transform(raw)
-    predicted_time = float(vehicle_model.predict(scaled)[0])
+    scaled = vehicle_speed_scaler.transform(raw)
+    predicted_speed_kmh = float(vehicle_speed_model.predict(scaled)[0])
 
-    risk_ratio   = predicted_time / max(deadline_min, 1)
+    if predicted_speed_kmh > 0:
+        # distance_km / speed_kmh -> hours -> minutes
+        time_needed_min = (distance_km / predicted_speed_kmh) * 60
+    else:
+        time_needed_min = 9999
+
+    risk_ratio   = time_needed_min / max(deadline_min, 1)
     is_late_prob = min(risk_ratio, 1.0)
 
-    return is_late_prob, predicted_time, predicted_time
+    return is_late_prob, predicted_speed_kmh, time_needed_min
 
 
 @app.route('/predict', methods=['POST'])
 def predict():
     all_loaded = all(x is not None for x in [
         walk_speed_model, walk_speed_scaler, walk_late_model,
-        vehicle_model, vehicle_scaler
+        vehicle_speed_model, vehicle_speed_scaler
     ])
 
     if not all_loaded:
@@ -223,14 +248,15 @@ def predict():
                     time_needed_min = time_needed
 
                 else:
-                    is_late_prob, predicted_time, time_needed = predict_vehicle(item)
+                    is_late_prob, predicted_speed_kmh, time_needed = predict_vehicle(item)
 
                     info = (
-                        f"Estimate travel time:{format_minutes(predicted_time)} | "
-                        f"Distance : {distance_m:.0f}m"
+                        f"Speed: {predicted_speed_kmh:.1f} km/h | "
+                        f"Needs: {format_minutes(time_needed)} | "
+                        f"Distance: {distance_m:.0f}m"
                     )
 
-                    time_needed_min = predicted_time
+                    time_needed_min = time_needed
 
                 risk_percent = min(int(is_late_prob * 100), 100)
                 is_late      = risk_percent > 50

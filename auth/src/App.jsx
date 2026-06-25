@@ -9,6 +9,7 @@ import LocationManagement from './pages/LocationManagement';
 import NotificationPage from './pages/NotificationPage';
 import SchedulePage from './pages/SchedulePage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import RouteManagement from './pages/RouteManagement';
 import { supabase } from './client';
 
 const App = () => {
@@ -245,6 +246,11 @@ const playStatusChangeSound = (newStatus) => {
           onClick={() => navigate('/analytics')} active={location.pathname === '/analytics'}
         />
 
+        <SidebarItem
+          icon={<MapPin size={20} />} text="Route"
+          onClick={() => navigate('/create-route/1')} active={location.pathname.startsWith('/create-route')}
+        />
+
         <hr className="my-3 border-slate-800 opacity-20" />
         <SidebarItem icon={<LogOut size={20} />} text="Logout" onClick={handleLogout} />
       </Sidebar>
@@ -260,6 +266,7 @@ const playStatusChangeSound = (newStatus) => {
           <Route path="/notifications" element={<NotificationPage notifications={notifications} setNotifications={setNotifications} />} /> 
           <Route path="/schedule" element={<SchedulePage role={role} />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/create-route/:tourId" element={<RouteManagement />} />
           <Route path="*" element={<Navigate to="/homepage" />} />
         </Routes>
         </div>
