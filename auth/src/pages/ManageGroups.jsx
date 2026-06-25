@@ -469,6 +469,7 @@ const ManageGroups = ({ role }) => {
     <div className="p-8 bg-[#FBFBFE] min-h-screen font-sans">
       <div className="max-w-7xl mx-auto">
         <div className="mb-10 flex justify-between items-start">
+
           <div>
             <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Group Management</h1>
             <div className="flex items-center gap-2">
@@ -484,6 +485,9 @@ const ManageGroups = ({ role }) => {
               <Plus size={20} /> Create Team
             </button>
           )}
+        </div>
+        <div className="mb-16">
+          <GroupTimeStatus />
         </div>
 
         {loading ? (
