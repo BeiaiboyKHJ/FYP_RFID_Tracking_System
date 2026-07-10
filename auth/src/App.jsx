@@ -19,6 +19,7 @@ const App = () => {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState('dark');
+  const [notificationPermission, setNotificationPermission] = useState('default');
   const navigate = useNavigate();
   const location = useLocation();
   const isDark = theme === 'dark';
@@ -70,6 +71,58 @@ const App = () => {
       console.log("Sound error:", err);
     }
   };
+
+  const requestBrowserNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+
+    if (Notification.permission === 'granted') {
+      setNotificationPermission('granted');
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      setNotificationPermission('denied');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  };
+
+  const showMissingMemberNotification = (profile) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    const title = 'Missing member detected';
+    const body = `${profile?.username || 'A member'} has been marked missing.`;
+    const options = {
+      body,
+      icon: '/img/bg1.avif',
+      badge: '/img/bg1.avif',
+      tag: `missing-${profile?.user_id || profile?.id || Date.now()}`,
+      requireInteraction: true,
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((registration) => registration.showNotification(title, options))
+        .catch(() => new Notification(title, options));
+    } else {
+      new Notification(title, options);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (role === 'admin') {
+      requestBrowserNotifications();
+    }
+  }, [role]);
 
   useEffect(() => {
     if (token) {
@@ -145,6 +198,10 @@ const App = () => {
                       new Audio('/alert1.mp3').play().catch((e) => console.log("Audio play blocked by browser", e));
                       return [newAlert, ...prev];
                     });
+
+                    if (role === 'admin') {
+                      showMissingMemberNotification(profile);
+                    }
                   }
                 } catch (err) {
                   console.error("Fetch Error:", err.message);
