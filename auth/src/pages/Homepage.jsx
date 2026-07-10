@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../client'; 
 import { MapPin, Clock, Loader2, AlertTriangle, UserX, Cloud, Users, Footprints, ArrowRight, Star, ShieldCheck, Globe } from 'lucide-react';
 
-const Homepage = ({ token }) => {
+const Homepage = ({ token, theme = 'dark' }) => {
   const [profile, setProfile] = useState(null);
   const [checkpoints, setCheckpoints] = useState([]);
   const [memberStats, setMemberStats] = useState({ total: 0, missing: 0 });
   const [missingMembers, setMissingMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const isDark = theme === 'dark';
 
   // References for automatic scrolling functionality
   const routeInfoRef = useRef(null);
@@ -76,23 +77,23 @@ const Homepage = ({ token }) => {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3 bg-white px-8 py-10 rounded-3xl shadow-xl border border-slate-100 max-w-xs w-full text-center">
+      <div className={`flex h-screen items-center justify-center transition-colors duration-300 ${isDark ? 'bg-[#1f1a17]' : 'bg-[#f6efe9]'}`}>
+        <div className={`flex flex-col items-center gap-3 px-8 py-10 rounded-3xl shadow-xl border max-w-xs w-full text-center ${isDark ? 'bg-[#2a221e] border-[#433a32] text-[#fdf7ef]' : 'bg-[#fffaf5] border-[#e6d8c8] text-[#2f241f]'}`}>
           {/* Creative, moving/shaking location tracking layout */}
           <div className="relative flex items-center justify-center w-16 h-16 mb-2">
             <Loader2 className="animate-spin text-teal-600/30 absolute inset-0 w-full h-full" size={64} />
             <MapPin className="text-orange-500 animate-bounce drop-shadow-md z-10" size={32} />
             <span className="absolute bottom-2 w-4 h-1 bg-slate-300 rounded-full blur-[1px] opacity-70 animate-pulse"></span>
           </div>
-          <p className="text-slate-800 font-bold text-base tracking-wide">Loading...</p>
-          <p className="text-slate-400 text-xs font-medium">Fetching Live Data</p>
+          <p className="text-slate-800 font-bold text-base tracking-wide">Syncing Routes...</p>
+          <p className="text-slate-400 text-xs font-medium">Fetching live RFID checkpoint data</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-slate-50 min-h-screen text-slate-800 font-sans overflow-x-hidden pb-16">
+    <div className={`min-h-screen font-sans overflow-x-hidden pb-16 transition-colors duration-300 ${isDark ? 'bg-[#1f1a17] text-[#fdf7ef]' : 'bg-[#f6efe9] text-[#2f241f]'}`}>
       
       {/* 1. HERO SECTION (Teal Island Overlay Design) */}
       <div className="relative h-[65vh] min-h-[480px] w-full flex items-center px-4 sm:px-8 md:px-16 overflow-hidden">
@@ -120,7 +121,7 @@ const Homepage = ({ token }) => {
 
       {/* 2. FLOATING SEARCH/STATUS BAR (Current Location) */}
       <div className="max-w-4xl mx-auto -mt-16 relative z-20 px-4 mb-16">
-        <div className="bg-white rounded-full p-3 shadow-xl border border-slate-100 flex flex-col md:flex-row items-center gap-4 justify-between">
+        <div className={`rounded-full p-3 shadow-xl border flex flex-col md:flex-row items-center gap-4 justify-between ${isDark ? 'bg-[#2a221e] border-[#433a32]' : 'bg-[#fffaf5] border-[#e6d8c8]'}`}>
           <div className="flex items-center gap-4 pl-4 w-full md:w-auto">
             <MapPin className="text-orange-500 shrink-0" size={24} />
             <div className="text-left">
@@ -134,7 +135,7 @@ const Homepage = ({ token }) => {
           
           <div className="h-px md:h-8 w-full md:w-px bg-slate-200"></div>
 
-          <div className="w-full md:w-auto flex items-center justify-between md:justify-end gap-4 px-4 md:px-0 bg-slate-50 md:bg-transparent py-2 md:py-0 rounded-full">
+          <div className={`w-full md:w-auto flex items-center justify-between md:justify-end gap-4 px-4 md:px-0 py-2 md:py-0 rounded-full ${isDark ? 'bg-[#211b17] md:bg-transparent' : 'bg-[#f3e7db] md:bg-transparent'}`}>
             {memberStats.missing > 0 ? (
               <div className="flex items-center gap-2 text-red-500 px-3 py-1 rounded-full text-xs font-semibold bg-red-50">
                 <AlertTriangle size={14} className="animate-pulse" />
@@ -162,42 +163,48 @@ const Homepage = ({ token }) => {
         </div>
       </div>
 
-      {/* 3. POPULAR DESTINATIONS (Member Overview Grid) */}
+      {/* 3. MEMBER OVERVIEW (Reordered Layout Grid) */}
       <div className="max-w-6xl mx-auto px-4 mb-16">
         <div className="text-center mb-10">
-          <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">Member Overview</h2>
-          <p className="text-slate-500 text-sm max-w-md mx-auto">Real-time headcount filters of active travelers sorted by their registered checkpoint destinations.</p>
+          <h2 className={`text-3xl font-extrabold tracking-tight mb-2 ${isDark ? 'text-[#fdf7ef]' : 'text-slate-900'}`}>Member Overview</h2>
+          <p className={`text-sm max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Real-time headcount filters of active travelers sorted by their registered checkpoint destinations.</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white p-6 rounded-3xl shadow-md border border-slate-100 relative group overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-teal-600"></div>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Global Group Size</p>
-            <p className="text-4xl font-black text-slate-900 mb-2">{memberStats.total || 0}</p>
-            <span className="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded-md">Total Registered</span>
-          </div>
-
-          <div className="bg-white p-6 rounded-3xl shadow-md border border-slate-100 relative group overflow-hidden">
-            <div className={`absolute top-0 left-0 w-full h-1.5 ${memberStats.missing > 0 ? 'bg-red-500' : 'bg-slate-200'}`}></div>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Missing / Overdue</p>
-            <p className={`text-4xl font-black mb-2 ${memberStats.missing > 0 ? 'text-red-500' : 'text-slate-400'}`}>{memberStats.missing || 0}</p>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${memberStats.missing > 0 ? 'bg-red-500/10 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-              Requires Attention
-            </span>
-          </div>
-
-          {checkpoints.map((cp) => (
-            <div key={cp.id} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-all">
-              <div className="flex justify-between items-start mb-2">
-                <p className="text-slate-800 text-sm font-bold truncate">Checkpoint {cp.checkpoint_type}</p>
-                <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">ID: {cp.checkpoint_type}</span>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <p className="text-3xl font-black text-teal-900">{memberStats[cp.checkpoint_type] || 0}</p>
-                <span className="text-xs text-slate-400 font-medium">Scanned In</span>
-              </div>
+        <div className="flex flex-col gap-6">
+          {/* Row 1: Global Stats Boxes (Group Size and Missing/Overdue side-by-side) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className={`p-6 rounded-3xl shadow-md border relative group overflow-hidden ${isDark ? 'bg-[#2a221e] border-[#433a32]' : 'bg-[#fffaf5] border-[#e6d8c8]'}`}>
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-teal-600"></div>
+              <p className={`text-xs font-bold uppercase tracking-wider mb-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Total Members</p>
+              <p className={`text-4xl font-black mb-2 ${isDark ? 'text-[#fdf7ef]' : 'text-slate-900'}`}>{memberStats.total || 0}</p>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${isDark ? 'text-teal-300 bg-teal-500/10' : 'text-teal-600 bg-teal-50'}`}>Total Registered</span>
             </div>
-          ))}
+
+            <div className={`p-6 rounded-3xl shadow-md border relative group overflow-hidden ${isDark ? 'bg-[#2a221e] border-[#433a32]' : 'bg-[#fffaf5] border-[#e6d8c8]'}`}>
+              <div className={`absolute top-0 left-0 w-full h-1.5 ${memberStats.missing > 0 ? 'bg-red-500' : 'bg-slate-200'}`}></div>
+              <p className={`text-xs font-bold uppercase tracking-wider mb-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Missing / Overdue</p>
+              <p className={`text-4xl font-black mb-2 ${memberStats.missing > 0 ? 'text-red-500' : isDark ? 'text-slate-400' : 'text-slate-400'}`}>{memberStats.missing || 0}</p>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${memberStats.missing > 0 ? 'bg-red-500/10 text-red-600' : isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
+                Missing Members
+              </span>
+            </div>
+          </div>
+
+          {/* Row 2: Checkpoint specific headcount boxes rendered cleanly directly underneath */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {checkpoints.map((cp) => (
+              <div key={cp.id} className={`min-h-[152px] p-6 rounded-3xl shadow-sm border hover:shadow-md transition-all ${isDark ? 'bg-[#2a221e] border-[#433a32]' : 'bg-[#fffaf5] border-[#e6d8c8]'}`}>
+                <div className="flex justify-between items-start mb-3 gap-2">
+                  <p className={`text-sm font-bold truncate ${isDark ? 'text-[#fdf7ef]' : 'text-slate-800'}`}>Checkpoint {cp.checkpoint_type}</p>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>ID: {cp.checkpoint_type}</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <p className={`text-3xl font-black ${isDark ? 'text-teal-300' : 'text-teal-900'}`}>{memberStats[cp.checkpoint_type] || 0}</p>
+                  <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>Scanned In</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -210,9 +217,9 @@ const Homepage = ({ token }) => {
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {checkpoints.map((cp) => (
-            <div key={cp.id} className={`bg-white rounded-3xl shadow-sm border p-6 flex flex-col justify-between transition-all hover:shadow-md relative overflow-hidden ${
-              cp.is_exit ? 'border-orange-200 ring-4 ring-orange-500/5' : 'border-slate-100'
-            }`}>
+            <div key={cp.id} className={`rounded-3xl shadow-sm border p-6 flex flex-col justify-between transition-all hover:shadow-md relative overflow-hidden ${
+              cp.is_exit ? 'border-orange-200 ring-4 ring-orange-500/5' : isDark ? 'border-[#433a32]' : 'border-[#e6d8c8]'
+            } ${isDark ? 'bg-[#2a221e]' : 'bg-[#fffaf5]'}`}>
               {cp.is_exit && (
                 <div className="absolute top-0 right-0 bg-orange-500 text-white text-[9px] font-black tracking-widest px-3 py-1 rounded-bl-xl uppercase">
                   EXIT
@@ -225,12 +232,12 @@ const Homepage = ({ token }) => {
                     {cp.is_exit ? <Globe size={20} /> : <ShieldCheck size={20} />}
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base">Checkpoint {cp.checkpoint_type}</h3>
-                    <p className="text-[11px] text-slate-400 uppercase font-bold tracking-wider">{cp.is_exit ? 'Final Exit Gate' : 'Verified Waypoint'}</p>
+                    <h3 className={`font-bold text-base ${isDark ? 'text-[#fdf7ef]' : 'text-slate-900'}`}>Checkpoint {cp.checkpoint_type}</h3>
+                    <p className={`text-[11px] uppercase font-bold tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>{cp.is_exit ? 'Final Exit Gate' : 'Verified Waypoint'}</p>
                   </div>
                 </div>
 
-                <div className="space-y-3 text-xs text-slate-600 border-t border-slate-50 pt-4">
+                <div className={`space-y-3 text-xs border-t pt-4 ${isDark ? 'text-slate-300 border-[#433a32]' : 'text-slate-600 border-slate-50'}`}>
                   <div className="flex items-start gap-2">
                     <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
                     <span className="line-clamp-2 leading-relaxed">{cp.address}</span>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../client';
-import { BrainCircuit, Loader2, Activity, ShieldAlert, Footprints, Truck, Bus, Flag, Clock, MapPin } from 'lucide-react';
+import { BrainCircuit, Loader2, Activity, ShieldAlert, Footprints, Truck, Bus, Flag, Clock, MapPin, AlertCircle } from 'lucide-react';
 
 const MODE_CONFIG = [
   { id: 'walk',    icon: <Footprints size={14}/>, label: 'Walking' },
@@ -36,27 +36,42 @@ const AnalyticsPage = ({ role }) => {
   }, [exitInfo]);
 
   const formatExtraTime = (min) => {
-  if (min <= 0) return null;
+    if (min <= 0) return null;
+    const h = Math.floor(min / 60);
+    const m = Math.floor(min % 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m} mins`;
+  };
 
-  const h = Math.floor(min / 60);
-  const m = Math.floor(min % 60);
+  const useRoadApproximation = import.meta.env.VITE_USE_OSRM !== 'true';
 
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m} minutes`;
-};
+  const estimateDistanceMeters = (lat1, lon1, lat2, lon2) => {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+    const toRadians = (deg) => deg * (Math.PI / 180);
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return 6371000 * c;
+  };
 
   const calculateRoadDistance = async (lat1, lon1, lat2, lon2, transport = 'driving') => {
     if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+    if (useRoadApproximation) {
+      return estimateDistanceMeters(lat1, lon1, lat2, lon2);
+    }
+
     try {
       const profile = transport === 'walk' ? 'foot' : 'driving';
       const url     = `https://router.project-osrm.org/route/v1/${profile}/${lon1},${lat1};${lon2},${lat2}?overview=false`;
       const res     = await fetch(url);
       const data    = await res.json();
       if (data.code === 'Ok' && data.routes?.length > 0) return data.routes[0].distance;
-      return 0;
+      return estimateDistanceMeters(lat1, lon1, lat2, lon2);
     } catch (err) {
       console.error("OSRM error:", err);
-      return 0;
+      return estimateDistanceMeters(lat1, lon1, lat2, lon2);
     }
   };
 
@@ -67,7 +82,6 @@ const AnalyticsPage = ({ role }) => {
       const { count: globalTotal } = await supabase
         .from('Profiles').select('*', { count: 'exact', head: true });
 
-      // Fetch exit checkpoint from 'checkpoints' table (single source of truth)
       const { data: exitData } = await supabase
         .from('checkpoints')
         .select('latitude, longitude, checkpoint_type, end_time')
@@ -93,7 +107,6 @@ const AnalyticsPage = ({ role }) => {
 
       const userIds = profiles.map(p => p.user_id);
 
-      // Fetch user scan logs from 'locations' (contains lat/lon of where user was scanned)
       const { data: userLocs } = await supabase
         .from('locations')
         .select('user_id, latitude, longitude, created_at')
@@ -115,7 +128,6 @@ const AnalyticsPage = ({ role }) => {
           );
         }
         const now = new Date();
-        // Always use exit checkpoint deadline from 'checkpoints' table — never stale
         const minutesRemaining = exitData?.end_time
           ? (new Date(exitData.end_time) - now) / 1000 / 60
           : 60;
@@ -143,9 +155,7 @@ const AnalyticsPage = ({ role }) => {
 
       const result = await response.json();
       const predictionsWithStatus = (result.predictions || []).map(p => {
-        const extraTime =
-          (p.time_needed_min ?? 0) - (p.deadline_min ?? 0);
-
+        const extraTime = (p.time_needed_min ?? 0) - (p.deadline_min ?? 0);
         return {
           ...p,
           status: statusMap[p.id] || null,
@@ -163,38 +173,22 @@ const AnalyticsPage = ({ role }) => {
     }
   }, [viewMode]);
 
-  // Sync ref AFTER runPrediction is defined
   useEffect(() => { runPredictionRef.current = runPrediction; }, [runPrediction]);
 
-  // Initial run + re-run when viewMode changes
   useEffect(() => {
     if (skipNextEffect.current) { skipNextEffect.current = false; return; }
     runPrediction();
   }, [runPrediction]);
 
-  // Real-time: listen to BOTH tables
-  // - 'checkpoints' → exit checkpoint config changed (address, deadline, is_exit toggle)
-  // - 'locations'   → user scanned a card (new position data)
-// Real-time: listen to THREE tables
-useEffect(() => {
-  const sub = supabase
-    .channel('analytics-realtime')
-    .on('postgres_changes',
-      { event: '*', schema: 'public', table: 'checkpoints' },
-      () => { runPredictionRef.current?.(); }
-    )
-    .on('postgres_changes',
-      { event: '*', schema: 'public', table: 'locations' },
-      () => { runPredictionRef.current?.(); }
-    )
-    .on('postgres_changes',  // ← NEW
-      { event: 'UPDATE', schema: 'public', table: 'Profiles' },  // ← NEW
-      () => { runPredictionRef.current?.(); }  // ← NEW
-    )
-    .subscribe();
-
-  return () => supabase.removeChannel(sub);
-}, []);
+  useEffect(() => {
+    const sub = supabase
+      .channel('analytics-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checkpoints' }, () => { runPredictionRef.current?.(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, () => { runPredictionRef.current?.(); })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'Profiles' }, () => { runPredictionRef.current?.(); })
+      .subscribe();
+    return () => supabase.removeChannel(sub);
+  }, []);
 
   const handleModeChange = (newMode) => {
     if (newMode === viewMode) return;
@@ -206,32 +200,32 @@ useEffect(() => {
   const isExpired = timeLeft === 'Expired';
 
   return (
-    <div className="min-h-screen bg-taupe-300 text-black p-6 lg:p-10" style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif" }}>
+    <div className="min-h-screen bg-taupe-300 text-stone-900 p-6 lg:p-10" style={{ fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif" }}>
 
       {/* Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
         <div>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-500/20">
-              <BrainCircuit className="text-indigo-400" size={20} />
+          <div className="flex items-center gap-3 mb-1.5">
+            <div className="p-2.5 rounded-xl bg-indigo-600/10 border border-indigo-600/10">
+              <BrainCircuit className="text-indigo-600" size={22} />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-black">
+            <h1 className="text-2xl font-bold tracking-tight text-stone-950">
               Member's Latest Location and Late Prediction
             </h1>
           </div>
-          <p className="text-gray-800 text-sm ml-11">Real-time AI Delay Prediction and Risk Assessment</p>
+          <p className="text-stone-600 text-sm ml-14">Real-time AI Delay Prediction and Risk Assessment</p>
         </div>
 
         {/* Mode Switcher */}
-        <div className="bg-[#111] border border-white/8 p-1 rounded-xl flex gap-1">
+        <div className="bg-stone-950 p-1 rounded-xl flex gap-1 shadow-sm">
           {MODE_CONFIG.map((m) => (
             <button
               key={m.id}
               onClick={() => handleModeChange(m.id)}
               className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all duration-200 text-xs font-semibold ${
                 viewMode === m.id
-                  ? 'bg-rose-400 text-black shadow-lg shadow-taupe-500/25'
-                  : 'text-gray-300 hover:text-gray-300 hover:bg-white/5'
+                  ? 'bg-rose-400 text-stone-950 shadow-md'
+                  : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
               }`}
             >
               {m.icon} {m.label}
@@ -241,33 +235,30 @@ useEffect(() => {
       </div>
 
       {/* Top Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
         {/* Total Members */}
-        <div className="bg-taupe-400 border border-black rounded-2xl p-5 flex items-center gap-4">
-          <div className="p-3 bg-blue-800/10 rounded-xl border border-blue-900 shrink-0">
-            <Activity className="text-blue-400" size={18} />
+        <div className="bg-taupe-400 border border-stone-300/60 rounded-2xl p-5 flex items-center gap-4 shadow-sm">
+          <div className="p-3 bg-blue-600/10 rounded-xl border border-blue-200 shrink-0">
+            <Activity className="text-blue-600" size={20} />
           </div>
           <div>
-            <p className="text-[11px] text-black uppercase tracking-widest font-semibold mb-0.5">
-              Total Members
-            </p>
-            <p className="text-3xl font-bold tracking-tight">{stats.total}</p>
+            <p className="text-[11px] text-stone-600 uppercase tracking-wider font-bold mb-0.5">Total Members</p>
+            <p className="text-3xl font-bold tracking-tight text-stone-950">{stats.total}</p>
           </div>
         </div>
 
         {/* Risk Alerts */}
-        <div className={`border rounded-2xl border-3 p-5 flex items-center gap-4 transition-all duration-500 ${
-          stats.alerts > 0 ? 'bg-red-500/5 border-red-600' : 'bg-taupe-400 border-black'
+        <div className={`border rounded-2xl p-5 flex items-center gap-4 transition-all duration-500 shadow-sm ${
+          stats.alerts > 0 ? 'bg-red-50 border-red-200' : 'bg-taupe-400 border-stone-300/60'
         }`}>
-          <div className={`p-3 rounded-xl border border-3 shrink-0 ${
-            stats.alerts > 0 ? 'bg-red-500/10 border-red-500' : 'bg-gray-500/10 border-gray-500/20'
+          <div className={`p-3 rounded-xl border shrink-0 ${
+            stats.alerts > 0 ? 'bg-red-200/50 border-red-300' : 'bg-stone-200 border-stone-300'
           }`}>
-            <ShieldAlert className={stats.alerts > 0 ? 'text-red-400' : 'text-gray-500'} size={18} />
+            <ShieldAlert className={stats.alerts > 0 ? 'text-red-600' : 'text-stone-500'} size={20} />
           </div>
           <div>
-            <p className="text-[11px] text-black uppercase tracking-widest font-semibold mb-0.5">Risk Alerts</p>
-            <p className={`text-3xl font-bold tracking-tight ${stats.alerts > 0 ? 'text-red-400' : ''}`}>
+            <p className="text-[11px] text-stone-600 uppercase tracking-wider font-bold mb-0.5">Risk Alerts</p>
+            <p className={`text-3xl font-bold tracking-tight ${stats.alerts > 0 ? 'text-red-600' : 'text-stone-900'}`}>
               {stats.alerts}
             </p>
           </div>
@@ -275,32 +266,32 @@ useEffect(() => {
 
         {/* Exit Checkpoint / Countdown */}
         {exitInfo ? (
-          <div className={`border rounded-2xl p-5 transition-all duration-500 ${
-            isExpired ? 'bg-red-500/5 border-red-600 border-3' : 'bg-taupe-200 border-orange-800 border-3'
+          <div className={`border rounded-2xl p-5 transition-all duration-500 shadow-sm ${
+            isExpired ? 'bg-red-50 border-red-200' : 'bg-stone-50 border-stone-300/80'
           }`}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div className={`p-2 rounded-lg border ${
-                  isExpired ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-800/10 border-orange-800/20'
+                  isExpired ? 'bg-red-100 border-red-200' : 'bg-amber-100 border-amber-200'
                 }`}>
-                  <Flag className={isExpired ? 'text-red-400' : 'text-orange-400'} size={14} />
+                  <Flag className={isExpired ? 'text-red-600' : 'text-amber-700'} size={14} />
                 </div>
                 <div>
-                  <p className="text-[10px] text-black uppercase tracking-widest font-semibold">Exit Point</p>
-                  <p className="text-sm font-bold text-green-500">Checkpoint {exitInfo.checkpoint_type}</p>
+                  <p className="text-[10px] text-stone-500 uppercase tracking-wider font-bold">Exit Point</p>
+                  <p className="text-sm font-bold text-stone-900">Checkpoint {exitInfo.checkpoint_type}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-black uppercase tracking-widest font-semibold mb-0.5">Time Left</p>
+                <p className="text-[10px] text-stone-500 uppercase tracking-wider font-bold mb-0.5">Time Left</p>
                 <p className={`text-lg font-bold font-mono tabular-nums ${
-                  isExpired ? 'text-red-400' : 'text-green-500'
+                  isExpired ? 'text-red-600' : 'text-emerald-600'
                 }`}>
                   {timeLeft || '—'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-black">
-              <Clock size={11} />
+            <div className="flex items-center gap-2 text-[11px] text-stone-600 border-t border-stone-200/60 pt-2.5">
+              <Clock size={12} className="text-stone-400" />
               <span>
                 {exitInfo.end_time
                   ? new Date(exitInfo.end_time).toLocaleString('en-GB', {
@@ -309,96 +300,83 @@ useEffect(() => {
                     })
                   : 'No deadline set'}
               </span>
-              <span className="mx-1 text-gray-700">·</span>
-              <MapPin size={11} />
+              <span className="mx-1 text-stone-300">·</span>
+              <MapPin size={12} className="text-stone-400" />
               <span className="font-mono">
                 {exitInfo.latitude?.toFixed(4)}, {exitInfo.longitude?.toFixed(4)}
               </span>
             </div>
           </div>
         ) : (
-          <div className="bg-[#111] border border-white/8 rounded-2xl p-5 flex items-center gap-3">
-            <div className="p-3 bg-gray-500/10 rounded-xl border border-gray-500/20 shrink-0">
-              <Flag className="text-gray-600" size={18} />
+          <div className="bg-stone-100 border border-stone-300/60 rounded-2xl p-5 flex items-center gap-3 shadow-sm">
+            <div className="p-3 bg-stone-200 rounded-xl border border-stone-300 shrink-0">
+              <Flag className="text-stone-400" size={20} />
             </div>
             <div>
-              <p className="text-[11px] text-gray-500 uppercase tracking-widest font-semibold mb-0.5">Exit Point</p>
-              <p className="text-sm text-gray-600 font-medium">Not configured</p>
+              <p className="text-[11px] text-stone-500 uppercase tracking-wider font-bold mb-0.5">Exit Point</p>
+              <p className="text-sm text-stone-500 font-medium">Not configured</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Prediction Table */}
-      <div className="bg-stone-200 rounded-2xl border border-white/8 overflow-hidden relative">
+      {/* Prediction Table Container */}
+      <div className="bg-stone-50 rounded-2xl border border-stone-300/80 shadow-sm overflow-hidden relative">
         {isPredicting && (
-          <div className="absolute inset-0 bg-blue/70 backdrop-blur-sm z-20 flex items-center justify-center flex-col gap-3">
-            <Loader2 className="animate-spin text-indigo-400" size={32} />
-            <p className="text-xs font-semibold tracking-[0.15em] text-gray-400 uppercase">
+          <div className="absolute inset-0 bg-stone-100/80 backdrop-blur-xs z-20 flex items-center justify-center flex-col gap-3">
+            <Loader2 className="animate-spin text-indigo-600" size={32} />
+            <p className="text-xs font-bold tracking-widest text-stone-600 uppercase">
               Running prediction model...
             </p>
           </div>
         )}
 
-            <div className="px-6 py-4 border-b border-white/6 flex items-center gap-3">
-
-              <p className="text-[18px] font-bold text-black uppercase tracking-widest">
-                Prediction Results — {viewMode === 'walk' ? 'Walking' : viewMode === 'vehicle' ? 'Vehicle' : 'Bus'}
-              </p>
-
-              <div className="px-2 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center gap-1">
-                <span className="text-indigo-700 font-black text-sm">
-                  {predictions.length}
-                </span>
-                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
-                  Members
-                </span>
-              </div>
-
-            </div>
+        <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-100/50">
+          <p className="text-xs font-bold text-stone-700 uppercase tracking-wider">
+            Prediction Results — {viewMode === 'walk' ? 'Walking' : viewMode === 'vehicle' ? 'Vehicle' : 'Bus'}
+          </p>
+          <div className="px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 flex items-center gap-1.5">
+            <span className="text-indigo-700 font-bold text-xs">{predictions.length}</span>
+            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Members</span>
+          </div>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
-                <th className="px-6 py-3 text-[18px] font-bold text-black uppercase tracking-widest">Member</th>
-                <th className="px-6 py-3 text-[18px] font-bold text-black uppercase tracking-widest">AI Prediction</th>
-                <th className="px-6 py-3 text-[18px] font-bold text-black uppercase tracking-widest">Risk</th>
+              <tr className="border-b border-stone-200 bg-stone-100/30">
+                <th className="px-6 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider w-1/4">Member</th>
+                <th className="px-6 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider w-2/5">AI Prediction Timeline</th>
+                <th className="px-6 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider w-1/3">Risk Assessment</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-stone-200/70">
               {predictions.length === 0 ? (
                 <tr>
-                  <td colSpan="3" className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-3 opacity-30">
-                      <Activity size={36} className="text-black" />
-                      <p className="text-sm font-medium text-black">
-                        No members found for {viewMode} mode
-                      </p>
+                  <td colSpan="3" className="px-6 py-16 text-center">
+                    <div className="flex flex-col items-center gap-2.5 text-stone-400">
+                      <Activity size={32} />
+                      <p className="text-sm font-medium">No members active in {viewMode} mode</p>
                     </div>
                   </td>
                 </tr>
               ) : (
                 predictions.map((p, i) => (
-                  <tr
-                    key={p.id}
-                    className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors last:border-0 ${
-                      i % 2 === 0 ? '' : 'bg-white/[0.01]'
-                    }`}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${
-                          p.is_late === null ? 'bg-gray-600' :
-                          p.is_late ? 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.6)] animate-pulse' :
-                          'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.4)]'
+                  <tr key={p.id} className="hover:bg-stone-100/40 transition-colors">
+                    {/* Column 1: Member Name & Status pill */}
+                    <td className="px-6 py-4.5 align-top">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                          p.is_late === null ? 'bg-stone-400' :
+                          p.is_late ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse' :
+                          'bg-emerald-500'
                         }`} />
                         <div>
-                          <p className="text-sm font-semibold text-black leading-tight">{p.label}</p>
-                          <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded mt-0.5 inline-block ${
-                            !p.status            ? 'text-gray-600 bg-gray-600/10' :
-                            p.status === 'Missing' ? 'text-red-400 bg-red-400/10' :
-                                                     'text-indigo-400 bg-indigo-400/10'
+                          <p className="text-sm font-bold text-stone-950 leading-none mb-1.5">{p.label}</p>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md inline-block ${
+                            !p.status            ? 'text-stone-500 bg-stone-200/60' :
+                            p.status === 'Missing' ? 'text-red-700 bg-red-100' :
+                                                     'text-indigo-700 bg-indigo-50 border border-indigo-100'
                           }`}>
                             {!p.status ? 'Not started' : p.status === 'Missing' ? '⚠ Missing' : `CP ${p.status}`}
                           </span>
@@ -406,44 +384,53 @@ useEffect(() => {
                       </div>
                     </td>
 
-                    <td className="px-6 py-4">
-                      <span className="text-[14px] font-mono text-black bg-black/5 border border-white/8 px-3 py-1.5 rounded-lg leading-relaxed">
-                        {p.info || 'Analyzing...'} | Left: {timeLeft}
-                      </span>
+                    {/* Column 2: Route Prediction details */}
+                    <td className="px-6 py-4.5 align-top">
+                      <div className="inline-flex items-center gap-2 text-xs font-mono text-stone-800 bg-stone-200/60 border border-stone-300/40 px-3 py-2 rounded-lg">
+                        <span className="font-semibold text-stone-900">{p.info || 'Analyzing...'}</span>
+                        <span className="text-stone-400">|</span>
+                        <span className="text-stone-600">Global Limit: {timeLeft}</span>
+                      </div>
                     </td>
 
-                    <td className="px-6 py-4">
+                    {/* Column 3: Risk Bar */}
+                    <td className="px-6 py-4.5 align-top">
                       {p.risk === null ? (
-                        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1.5 rounded-lg border border-gray-700 bg-gray-700/20 text-gray-500 uppercase tracking-wider">
+                        <span className="inline-flex text-[10px] font-bold px-2 py-1 rounded bg-stone-100 text-stone-400 border border-stone-200 uppercase tracking-wider">
                           No Data
                         </span>
                       ) : (
-                        <div className="flex items-center gap-3">
-                          <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border uppercase tracking-wider ${
-                            p.is_late
-                              ? 'bg-red-500/10 border-red-500/25 text-red-400'
-                              : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
-                          }`}>
-                            {p.is_late ? '⚠ Delay Risk' : '✓ On Track'}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-white border border-gray-600 border-2 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all duration-500 ${
-                                  p.risk > 75 ? 'bg-red-500' :
-                                  p.risk > 50 ? 'bg-orange-400' :
-                                  p.risk > 25 ? 'bg-yellow-400' : 'bg-emerald-500'
-                                }`}
-                                style={{ width: `${p.risk}%` }}
-                              />
-                            </div>
-                            <span className="text-[14px] text-bold font-mono text-gray-400 w-8">{p.risk}%</span>
-                            {p.extra_time > 0 && (
-                              <span className="text-[14px] text-bold font-mono text-red-400 ml-2">
-                                Extra Time Needed: {formatExtraTime(p.extra_time)}
-                              </span>
-                            )}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                              p.is_late
+                                ? 'bg-red-50 border-red-200 text-red-700'
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            }`}>
+                              {p.is_late ? '⚠ Delay Risk' : '✓ On Track'}
+                            </span>
+                            <span className="text-xs font-bold font-mono text-stone-600">{p.risk}%</span>
                           </div>
+                          
+                          {/* Visual Meter Bar */}
+                          <div className="w-32 h-2 bg-stone-200 rounded-full overflow-hidden border border-stone-300/40">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                p.risk > 75 ? 'bg-red-500' :
+                                p.risk > 50 ? 'bg-amber-500' :
+                                p.risk > 25 ? 'bg-yellow-400' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${p.risk}%` }}
+                            />
+                          </div>
+
+                          {/* EXTRA TIME ALERT PILL NOW MOVED HERE (UNDER THE RISK INDICATOR) */}
+                          {p.extra_time > 0 && (
+                            <div className="flex items-center gap-1 bg-red-50 border border-red-200 text-red-700 px-2 py-1 rounded-md text-[11px] font-bold w-fit animate-pulse mt-1">
+                              <AlertCircle size={12} className="shrink-0 text-red-600" />
+                              <span>Extra Time Needed: {formatExtraTime(p.extra_time)}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>

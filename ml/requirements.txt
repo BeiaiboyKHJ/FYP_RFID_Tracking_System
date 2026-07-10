@@ -3,6 +3,7 @@ wheel
 gunicorn
 Flask
 Flask-CORS
+gunicorn
 numpy
 pandas
 joblib

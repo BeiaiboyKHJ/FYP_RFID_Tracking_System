@@ -1,12 +1,13 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
-import pandas as pd
 import joblib
 import os
 import sys
 import requests
 from datetime import datetime
+from collections import OrderedDict
+from threading import Lock
 from dotenv import load_dotenv 
  
 load_dotenv()  
@@ -104,6 +105,10 @@ walk_late_model      = None
 vehicle_speed_model  = None
 vehicle_speed_scaler = None
 
+prediction_cache = OrderedDict()
+prediction_cache_lock = Lock()
+MAX_CACHE_SIZE = 512
+
 try:
     print(f"Loading from: {MODELS_DIR}")
     print(f"Files found: {os.listdir(MODELS_DIR)}")
@@ -120,30 +125,76 @@ except Exception as e:
     print(f"Error loading AI assets: {e}")
 
 
+def _build_prediction_cache_key(kind, item):
+    transport = str(item.get('transport_mode', 'walking')).strip().lower()
+    if kind == 'walk':
+        return (
+            kind,
+            transport,
+            round(float(item.get('distance', 0)), 2),
+            round(float(item.get('deadline', 60)), 2),
+            int(item.get('age', 25)),
+            round(float(item.get('mass', 70)), 2),
+            round(float(item.get('height', 1.7)), 2),
+            int(item.get('shoe', 40)),
+            str(item.get('gender', 'm')).lower(),
+        )
+
+    now = datetime.now()
+    return (
+        kind,
+        transport,
+        round(float(item.get('distance', 0)), 2),
+        round(float(item.get('deadline', 60)), 2),
+        now.weekday(),
+        now.hour,
+        1 if transport == 'bus' else 0,
+    )
+
+
+def get_cached_prediction(kind, item, predictor):
+    key = _build_prediction_cache_key(kind, item)
+
+    with prediction_cache_lock:
+        if key in prediction_cache:
+            prediction_cache.move_to_end(key)
+            return prediction_cache[key]
+
+    result = predictor(item)
+
+    with prediction_cache_lock:
+        prediction_cache[key] = result
+        prediction_cache.move_to_end(key)
+        if len(prediction_cache) > MAX_CACHE_SIZE:
+            prediction_cache.popitem(last=False)
+
+    return result
+
+
 def predict_walking(item):
     gender = 1 if str(item.get('gender', 'm')).lower() in ['f', 'female', '1'] else 0
 
-    bio_raw = pd.DataFrame([{
-        'age':       item.get('age', 25),
-        'body mass': item.get('mass', 70),
-        'body size': item.get('height', 1.7),
-        'shoe size': item.get('shoe', 40),
-    }])
+    bio_input = np.array([[
+        float(item.get('age', 25)),
+        float(item.get('mass', 70)),
+        float(item.get('height', 1.7)),
+        float(item.get('shoe', 40)),
+    ]], dtype=float)
 
-    bio_scaled = walk_speed_scaler.transform(bio_raw)
+    bio_scaled = walk_speed_scaler.transform(bio_input)
 
-    stage1_input = pd.DataFrame([{
-        'gender':    gender,
-        'age':       bio_scaled[0][0],
-        'body mass': bio_scaled[0][1],
-        'body size': bio_scaled[0][2],
-        'shoe size': bio_scaled[0][3],
-    }])
+    stage1_input = np.array([[
+        float(gender),
+        float(bio_scaled[0][0]),
+        float(bio_scaled[0][1]),
+        float(bio_scaled[0][2]),
+        float(bio_scaled[0][3]),
+    ]], dtype=float)
 
     predicted_speed_ms = float(walk_speed_model.predict(stage1_input)[0])
 
-    distance_m   = item.get('distance', 500)
-    deadline_min = item.get('deadline', 60)
+    distance_m   = float(item.get('distance', 500))
+    deadline_min = float(item.get('deadline', 60))
 
     if deadline_min <= 0:
         return 1.0, predicted_speed_ms, 9999
@@ -176,8 +227,8 @@ def predict_vehicle(item):
     transport  = item.get('transport_mode', 'vehicle').lower()
     car_or_bus = 1 if transport == 'bus' else 0
 
-    distance_m   = item.get('distance', 0)
-    deadline_min = item.get('deadline', 60)
+    distance_m   = float(item.get('distance', 0))
+    deadline_min = float(item.get('deadline', 60))
 
     if deadline_min <= 0:
         return 1.0, 9999, 9999
@@ -186,14 +237,14 @@ def predict_vehicle(item):
 
     # Feature order MUST match scaler.feature_names_in_ exactly:
     # ['distance', 'rating', 'rating_weather', 'car_or_bus', 'day', 'hour']
-    raw = pd.DataFrame([{
-        'distance': distance_km,
-        'rating': 3,
-        'rating_weather': 3,
-        'car_or_bus': car_or_bus,
-        'day': now.weekday(),
-        'hour': now.hour,
-    }])
+    raw = np.array([[
+        float(distance_km),
+        3.0,
+        3.0,
+        float(car_or_bus),
+        float(now.weekday()),
+        float(now.hour),
+    ]], dtype=float)
 
     scaled = vehicle_speed_scaler.transform(raw)
     predicted_speed_kmh = float(vehicle_speed_model.predict(scaled)[0])
@@ -239,7 +290,7 @@ def predict():
 
             try:
                 if transport == 'walk':
-                    is_late_prob, speed, time_needed = predict_walking(item)
+                    is_late_prob, speed, time_needed = get_cached_prediction('walk', item, predict_walking)
 
                     info = (
                         f"Needs : {format_minutes(time_needed)} | "
@@ -248,7 +299,7 @@ def predict():
                     time_needed_min = time_needed
 
                 else:
-                    is_late_prob, predicted_speed_kmh, time_needed = predict_vehicle(item)
+                    is_late_prob, predicted_speed_kmh, time_needed = get_cached_prediction('vehicle', item, predict_vehicle)
 
                     info = (
                         f"Speed: {predicted_speed_kmh:.1f} km/h | "

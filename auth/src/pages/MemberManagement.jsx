@@ -365,6 +365,23 @@ const MemberManagement = ({ role, currentUserId }) => {
       return (a.username || '').localeCompare(b.username || '');
     });
 
+  const groupedMembers = filteredMembers.reduce((groups, member) => {
+    const groupName = (member.group || 'Unassigned').trim() || 'Unassigned';
+    if (!groups[groupName]) groups[groupName] = [];
+    groups[groupName].push(member);
+    return groups;
+  }, {});
+
+  Object.values(groupedMembers).forEach((group) => {
+    group.sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+  });
+
+  const orderedGroups = Object.entries(groupedMembers).sort(([groupA], [groupB]) => {
+    const normalizedA = groupA === 'Unassigned' ? 'zzzz' : groupA.toLowerCase();
+    const normalizedB = groupB === 'Unassigned' ? 'zzzz' : groupB.toLowerCase();
+    return normalizedA.localeCompare(normalizedB);
+  });
+
   const adminMember = members.find(m => m.role === 'admin');
 
   if (loading) return (
@@ -475,160 +492,179 @@ const MemberManagement = ({ role, currentUserId }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredMembers.map((member) => (
-              <tr key={member.user_id} className={`hover:bg-slate-50/50 transition-colors ${member.user_id === currentUserId ? "bg-blue-50/40" : ""}`}>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={member.avatar_url || `https://ui-avatars.com/api/?name=${member.username}&background=2563eb&color=fff&bold=true`}
-                      alt="avatar"
-                      className={`w-10 h-10 rounded-full object-cover shadow-sm border-3 ${
-                        member.role === 'admin' ? 'border-red-500/70' : 'border-blue-500/30'
-                      }`}
-                    />
-                    {member.role === 'admin' && (
-                      <div className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 border border-white">
-                        <Shield size={8} className="text-white" />
+            {orderedGroups.map(([groupName, groupMembers]) => (
+              <React.Fragment key={groupName}>
+                <tr className="bg-slate-100/90">
+                  <td colSpan={role === 'admin' ? 6 : 5} className="px-6 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2.5 w-2.5 rounded-full bg-teal-600" />
+                        <span className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-700">
+                          {groupName}
+                        </span>
                       </div>
-                    )}
-                    <div>
-                      <p className="font-semibold text-slate-700 flex items-center gap-1">
-                        {member.username} {member.user_id === currentUserId && "(Me)"}
-                      </p>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase ${
-                        member.role === 'admin' ? 'border-red-500 text-red-500 bg-red-50' : 'border-blue-200 text-blue-500 bg-blue-50'
-                      }`}>
-                        {member.role}
+                      <span className="text-xs font-semibold text-slate-500">
+                        {groupMembers.length} member{groupMembers.length === 1 ? '' : 's'}
                       </span>
                     </div>
-                  </div>
-                </td>
+                  </td>
+                </tr>
 
-                <td className="px-6 py-4">
-                  {role === 'admin' ? (
-                    <select
-                      value={member.group || ""}
-                      onChange={(e) => updateMemberField(member.user_id, 'group', e.target.value)}
-                      className="text-sm text-slate-800 bg-white border border-slate-800 rounded-lg p-1.5 outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Unassigned</option>
-                      {/* UPDATED: Dynamic groups from database */}
-                      {availableGroups.length > 0 ? (
-                        availableGroups.map((group) => (
-                          <option key={group} value={group}>
-                            {group}
-                          </option>
-                        ))
-                      ) : (
-                        <option disabled>No groups available</option>
-                      )}
-                    </select>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
-                      <User size={14} className="text-slate-800" />
-                      {member.group || "No Team"}
-                    </div>
-                  )}
-                </td>
-
-                {role === 'admin' && (
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex items-center">
-                        <CreditCard size={14} className="absolute left-2 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Scan Card..."
-                          value={member.rfid_uid || ""}
-                          onChange={(e) => updateMemberField(member.user_id, 'rfid_uid', e.target.value)}
-                          className="text-xs bg-white border border-slate-800 text-slate-800 rounded-lg pl-7 pr-2 py-1.5 w-32 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                {groupMembers.map((member) => (
+                  <tr key={member.user_id} className={`hover:bg-slate-50/50 transition-colors ${member.user_id === currentUserId ? "bg-blue-50/40" : ""}`}>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={member.avatar_url || `https://ui-avatars.com/api/?name=${member.username}&background=2563eb&color=fff&bold=true`}
+                          alt="avatar"
+                          className={`w-10 h-10 rounded-full object-cover shadow-sm border-3 ${
+                            member.role === 'admin' ? 'border-red-500/70' : 'border-blue-500/30'
+                          }`}
                         />
-                      </div>
-                      <button
-                        onClick={() => startScanning(member.user_id, member.username)}
-                        className={`shrink-0 p-2 rounded-lg transition-all shadow-md flex items-center justify-center ${
-                          isScanningMode && scanModal.username === member.username
-                            ? "bg-amber-500 animate-pulse cursor-wait"
-                            : "bg-blue-600 hover:bg-blue-700 active:scale-95 text-white"
-                        }`}
-                      >
-                        {isScanningMode && scanModal.username === member.username ? (
-                          <Loader2 size={14} className="animate-spin text-white" />
-                        ) : (
-                          <Contact2 size={14} />
+                        {member.role === 'admin' && (
+                          <div className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 border border-white">
+                            <Shield size={8} className="text-white" />
+                          </div>
                         )}
-                      </button>
-                    </div>
-                  </td>
-                )}
+                        <div>
+                          <p className="font-semibold text-slate-700 flex items-center gap-1">
+                            {member.username} {member.user_id === currentUserId && "(Me)"}
+                          </p>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase ${
+                            member.role === 'admin' ? 'border-red-500 text-red-500 bg-red-50' : 'border-blue-200 text-blue-500 bg-blue-50'
+                          }`}>
+                            {member.role}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
 
-                <td className="px-6 py-4">
-                  {role === 'admin' ? (
-                    <select
-                      value={member.status || ""}
-                      onChange={(e) => handleStatusChange(member.user_id, e.target.value, member.username)}
-                      className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-none outline-none cursor-pointer w-full truncate ${
-                        !member.status ? 'bg-slate-100 text-slate-500' :
-                        member.status === 'A' ? 'bg-blue-100 text-blue-600' :
-                        member.status === 'B' ? 'bg-emerald-100 text-emerald-600' :
-                        member.status === 'C' ? 'bg-cyan-300 text-cyan-900' :
-                        member.status === 'Missing' ? 'bg-red-300 text-red-900' :
-                        'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      <option value="">Not Started</option>
-                      {availableCheckpoints.length === 0 ? (
-                        <option disabled>No active checkpoints found</option>
+                    <td className="px-6 py-4">
+                      {role === 'admin' ? (
+                        <select
+                          value={member.group || ""}
+                          onChange={(e) => updateMemberField(member.user_id, 'group', e.target.value)}
+                          className="text-sm text-slate-800 bg-white border border-slate-800 rounded-lg p-1.5 outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Unassigned</option>
+                          {availableGroups.length > 0 ? (
+                            availableGroups.map((group) => (
+                              <option key={group} value={group}>
+                                {group}
+                              </option>
+                            ))
+                          ) : (
+                            <option disabled>No groups available</option>
+                          )}
+                        </select>
                       ) : (
-                        availableCheckpoints.map((cp) => (
-                          <option key={cp.checkpoint_type} value={cp.checkpoint_type}>
-                            Checkpoint {cp.checkpoint_type} ({cp.address})
-                          </option>
-                        ))
+                        <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                          <User size={14} className="text-slate-800" />
+                          {member.group || "No Team"}
+                        </div>
                       )}
-                      <option value="Missing" className="text-red-600 font-bold">Missing</option>
-                    </select>
-                  ) : (
-                    <div className="flex items-center gap-2 text-sm">
-                      <MapPin size={14} className="text-slate-400" />
-                      <span className={`text-xs font-bold px-2.5 py-1.5 rounded-full w-full truncate ${
-                        !member.status ? 'bg-slate-100 text-slate-600' :
-                        member.status === 'A' ? 'bg-blue-100 text-blue-600' :
-                        member.status === 'B' ? 'bg-emerald-100 text-emerald-600' :
-                        member.status === 'C' ? 'bg-cyan-300 text-cyan-900' :
-                        member.status === 'Missing' ? 'bg-red-300 text-red-900' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>
-                        {!member.status ? 'Not Started' : member.status === 'Missing' ? 'Missing' : `At Checkpoint ${member.status}`}
-                      </span>
-                    </div>
-                  )}
-                </td>
+                    </td>
 
-                <td className="px-6 py-4">
-                  <div className="flex flex-col">
-                    <span className="text-sm text-slate-600 font-semibold">
-                      {getRelativeTime(member.last_seen)}
-                    </span>
-                    <span className="text-[10px] text-slate-600 uppercase">
-                      {member.last_checkpoint || 'Unknown Station'}
-                    </span>
-                  </div>
-                </td>
+                    {role === 'admin' && (
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex items-center">
+                            <CreditCard size={14} className="absolute left-2 text-slate-400" />
+                            <input
+                              type="text"
+                              placeholder="Scan Card..."
+                              value={member.rfid_uid || ""}
+                              onChange={(e) => updateMemberField(member.user_id, 'rfid_uid', e.target.value)}
+                              className="text-xs bg-white border border-slate-800 text-slate-800 rounded-lg pl-7 pr-2 py-1.5 w-32 outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                            />
+                          </div>
+                          <button
+                            onClick={() => startScanning(member.user_id, member.username)}
+                            className={`shrink-0 p-2 rounded-lg transition-all shadow-md flex items-center justify-center ${
+                              isScanningMode && scanModal.username === member.username
+                                ? "bg-amber-500 animate-pulse cursor-wait"
+                                : "bg-blue-600 hover:bg-blue-700 active:scale-95 text-white"
+                            }`}
+                          >
+                            {isScanningMode && scanModal.username === member.username ? (
+                              <Loader2 size={14} className="animate-spin text-white" />
+                            ) : (
+                              <Contact2 size={14} />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    )}
 
-                {role === 'admin' && (
-                  <td className="px-6 py-4 text-center">
-                    <button
-                      onClick={() => updateMemberField(member.user_id, 'role', member.role === 'admin' ? 'member' : 'admin')}
-                      className={`p-2 rounded-lg transition-all ${
-                        member.role === 'admin' ? 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-800 hover:text-white'
-                      }`}
-                    >
-                      <Shield size={18} />
-                    </button>
-                  </td>
-                )}
-              </tr>
+                    <td className="px-6 py-4">
+                      {role === 'admin' ? (
+                        <select
+                          value={member.status || ""}
+                          onChange={(e) => handleStatusChange(member.user_id, e.target.value, member.username)}
+                          className={`text-xs font-bold px-2.5 py-1.5 rounded-full border-none outline-none cursor-pointer w-full truncate ${
+                            !member.status ? 'bg-slate-100 text-slate-500' :
+                            member.status === 'A' ? 'bg-blue-100 text-blue-600' :
+                            member.status === 'B' ? 'bg-emerald-100 text-emerald-600' :
+                            member.status === 'C' ? 'bg-cyan-300 text-cyan-900' :
+                            member.status === 'Missing' ? 'bg-red-300 text-red-900' :
+                            'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          <option value="">Not Started</option>
+                          {availableCheckpoints.length === 0 ? (
+                            <option disabled>No active checkpoints found</option>
+                          ) : (
+                            availableCheckpoints.map((cp) => (
+                              <option key={cp.checkpoint_type} value={cp.checkpoint_type}>
+                                Checkpoint {cp.checkpoint_type} ({cp.address})
+                              </option>
+                            ))
+                          )}
+                          <option value="Missing" className="text-red-600 font-bold">Missing</option>
+                        </select>
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm">
+                          <MapPin size={14} className="text-slate-400" />
+                          <span className={`text-xs font-bold px-2.5 py-1.5 rounded-full w-full truncate ${
+                            !member.status ? 'bg-slate-100 text-slate-600' :
+                            member.status === 'A' ? 'bg-blue-100 text-blue-600' :
+                            member.status === 'B' ? 'bg-emerald-100 text-emerald-600' :
+                            member.status === 'C' ? 'bg-cyan-300 text-cyan-900' :
+                            member.status === 'Missing' ? 'bg-red-300 text-red-900' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {!member.status ? 'Not Started' : member.status === 'Missing' ? 'Missing' : `At Checkpoint ${member.status}`}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-sm text-slate-600 font-semibold">
+                          {getRelativeTime(member.last_seen)}
+                        </span>
+                        <span className="text-[10px] text-slate-600 uppercase">
+                          {member.last_checkpoint || 'Unknown Station'}
+                        </span>
+                      </div>
+                    </td>
+
+                    {role === 'admin' && (
+                      <td className="px-6 py-4 text-center">
+                        <button
+                          onClick={() => updateMemberField(member.user_id, 'role', member.role === 'admin' ? 'member' : 'admin')}
+                          className={`p-2 rounded-lg transition-all ${
+                            member.role === 'admin' ? 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-800 hover:text-white'
+                          }`}
+                        >
+                          <Shield size={18} />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

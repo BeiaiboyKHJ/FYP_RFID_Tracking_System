@@ -1,37 +1,38 @@
-import { MoreVertical, ChevronLast, ChevronFirst, Shield, User } from "lucide-react"
+import { ChevronLast, ChevronFirst, Shield, Moon, Sun } from "lucide-react"
 import { useContext, createContext, useState } from "react"
 
 const SidebarContext = createContext()
 
-export default function Sidebar({ children, userEmail, userName, role, avatarUrl }) {
+export default function Sidebar({ children, userEmail, userName, role, avatarUrl, theme = 'dark', onToggleTheme }) {
   const [expanded, setExpanded] = useState(true)
+  const isDark = theme === 'dark'
   
   return (
     <aside className="h-screen sticky top-0 z-50">
       <nav 
-        className="h-full flex flex-col bg-[#A39184] border-r border-[#8E7D70] shadow-xl transition-all duration-300 ease-in-out overflow-x-hidden"
+        className={`h-full flex flex-col border-r shadow-xl transition-all duration-300 ease-in-out overflow-x-hidden ${isDark ? 'bg-[#3d332d] border-[#4f443d] text-[#f8efe9]' : 'bg-[#f5ece2] border-[#e6d8c8] text-[#2f241f]'}`}
         style={{ width: expanded ? '256px' : '80px' }}
       >
         <div className="p-4 pb-2 flex justify-between items-center">
           <div className={`overflow-hidden transition-all duration-300 ${expanded ? "w-32 opacity-100" : "w-0 opacity-0"}`}>
-              <span className="font-bold text-black whitespace-nowrap text-lg tracking-tight"> Tourtrack </span>
+              <span className={`font-bold whitespace-nowrap text-lg tracking-tight ${isDark ? 'text-[#f8efe9]' : 'text-[#2f241f]'}`}> Tourtrack </span>
           </div>
           
           <button
             onClick={() => setExpanded((curr) => !curr)}
-            className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors shrink-0"
+            className={`p-1.5 rounded-lg transition-colors shrink-0 ${isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-[#efe0cf] text-[#7a573c] hover:bg-[#e7cfb5] hover:text-[#2f241f]'}`}
           >
             {expanded ? <ChevronFirst size={20} /> : <ChevronLast size={20} />}
           </button>
         </div>
 
-        <SidebarContext.Provider value={{ expanded }}>
+        <SidebarContext.Provider value={{ expanded, theme }}>
           <ul className="flex-1 px-3 mt-4 space-y-1">{children}</ul>
         </SidebarContext.Provider>
 
         {/* PROFILE SECTION - UPDATED WITH ROLE LOGIC */}
 {/* PROFILE SECTION - Now with a solid dark background */}
-      <div className="border-t border-[#8E7D70] p-4 bg-[#2D2926] shadow-[0_-4px_10px_rgba(0,0,0,0.1)]">
+      <div className={`border-t p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.08)] ${isDark ? 'border-[#4f443d] bg-[#2D2926]' : 'border-[#e6d8c8] bg-[#fffaf5]'}`}>
         <div className="flex items-center">
           <div className="relative">
             <img
@@ -42,7 +43,7 @@ export default function Sidebar({ children, userEmail, userName, role, avatarUrl
               }`}
             />
             {/* Status Dot - Adjusted border to match new dark bg */}
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-[#2D2926] rounded-full">
+            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 rounded-full ${isDark ? 'border-[#2D2926]' : 'border-[#fffaf5]'}`}>
               <span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></span>
             </span>
           </div>
@@ -55,11 +56,11 @@ export default function Sidebar({ children, userEmail, userName, role, avatarUrl
           >
             <div className="leading-4 whitespace-nowrap">
               {/* Changed text to white to pop against dark background */}
-              <h4 className="font-bold text-white text-sm flex items-center gap-1">
+              <h4 className={`font-bold text-sm flex items-center gap-1 ${isDark ? 'text-white' : 'text-[#2f241f]'}`}>
                 {userName}
                 {role === 'admin' && <Shield size={12} className="text-red-400" />}
               </h4>
-              <span className="text-[10px] text-stone-400 font-medium">{userEmail}</span>
+              <span className={`text-[10px] font-medium ${isDark ? 'text-stone-400' : 'text-stone-600'}`}>{userEmail}</span>
               
               {/* ROLE BADGE */}
               {role && (
@@ -74,6 +75,14 @@ export default function Sidebar({ children, userEmail, userName, role, avatarUrl
             </div>
           </div>
         </div>
+
+        <button
+          onClick={onToggleTheme}
+          className={`mt-3 flex items-center justify-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-all ${isDark ? 'bg-[#4d413a] text-[#f8efe9] hover:bg-[#5c4f43]' : 'bg-[#efe0cf] text-[#7a573c] hover:bg-[#e7cfb5]'}`}
+        >
+          {isDark ? <Sun size={14} /> : <Moon size={14} />}
+          {isDark ? 'Light mode' : 'Dark mode'}
+        </button>
       </div>
       </nav>
     </aside>
@@ -81,7 +90,8 @@ export default function Sidebar({ children, userEmail, userName, role, avatarUrl
 }
 
 export function SidebarItem({ icon, text, active, alert, onClick }) {
-  const { expanded } = useContext(SidebarContext)
+  const { expanded, theme } = useContext(SidebarContext)
+  const isDark = theme === 'dark'
   
   return (
     <li
@@ -91,8 +101,8 @@ export function SidebarItem({ icon, text, active, alert, onClick }) {
         font-medium rounded-md cursor-pointer
         transition-all group
         ${active
-            ? "bg-[#2D2926] text-white shadow-md"
-            : "text-[#2D2926]/80 hover:bg-[#2D2926]/10 hover:text-[#2D2926]"
+            ? (isDark ? 'bg-[#2D2926] text-white shadow-md' : 'bg-[#1f6b60] text-white shadow-md')
+            : (isDark ? 'text-[#f2e9df]/80 hover:bg-[#2D2926]/10 hover:text-[#ffffff]' : 'text-[#4a3428]/80 hover:bg-[#efe0cf] hover:text-[#2f241f]')
         }
     `}
     >

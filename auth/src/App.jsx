@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SignUp, Login, Homepage, Profile } from './pages';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar, { SidebarItem } from './components/Sidebar';
-import { Home, Bell, User, Users, UserCog, MapPin, ChartPie, BarChart, LogOut } from 'lucide-react';
+import { Home, Bell, User, Users, UserCog, MapPin, ChartPie, BarChart, LogOut, Sparkles } from 'lucide-react';
 import ManageGroups from './pages/ManageGroups';
 import MemberManagement from './pages/MemberManagement';
 import LocationManagement from './pages/LocationManagement';
@@ -10,6 +10,7 @@ import NotificationPage from './pages/NotificationPage';
 import SchedulePage from './pages/SchedulePage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import RouteManagement from './pages/RouteManagement';
+import CheckpointLatencyTest from './pages/CheckpointLatencyTest';
 import { supabase } from './client';
 
 const App = () => {
@@ -18,10 +19,17 @@ const App = () => {
   const [notifications, setNotifications] = useState([]);
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [theme, setTheme] = useState('dark');
   const navigate = useNavigate();
   const location = useLocation();
+  const isDark = theme === 'dark';
 
   // ── Auth session handling (Supabase-managed, not sessionStorage) ──
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', isDark);
+  }, [theme, isDark]);
+
   useEffect(() => {
     // 1. Get existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -235,8 +243,8 @@ const App = () => {
   // ── Loading screen while session is being checked ──
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#2D2926]">
-        <p className="text-white text-lg">Loading...</p>
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 ${isDark ? 'bg-[#2D2926] text-white' : 'bg-[#f6efe9] text-[#2f241f]'}`}>
+        <p className="text-lg">Loading...</p>
       </div>
     );
   }
@@ -253,12 +261,14 @@ const App = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#2D2926]">
+    <div className={`flex min-h-screen transition-colors duration-300 ${isDark ? 'bg-[#2D2926] text-stone-100' : 'bg-[#f6efe9] text-[#2f241f]'}`}>
       <Sidebar
         userName={profileData?.username || "User"}
         userEmail={token?.user?.email}
         role={role}
         avatarUrl={profileData?.avatar_url}
+        theme={theme}
+        onToggleTheme={() => setTheme(isDark ? 'light' : 'dark')}
       >
         <SidebarItem
           icon={<Home size={20} />} text="Home"
@@ -307,18 +317,23 @@ const App = () => {
         />
 
         <SidebarItem
-          icon={<MapPin size={20} />} text="Route"
+          icon={<Sparkles size={20} />} text="Route"
           onClick={() => navigate('/create-route/1')} active={location.pathname.startsWith('/create-route')}
+        />
+
+        <SidebarItem
+          icon={<Sparkles size={20} />} text="Latency Test"
+          onClick={() => navigate('/latency-test')} active={location.pathname === '/latency-test'}
         />
 
         <hr className="my-3 border-slate-800 opacity-20" />
         <SidebarItem icon={<LogOut size={20} />} text="Logout" onClick={handleLogout} />
       </Sidebar>
 
-      <main className="flex-1 overflow-y-auto text-stone-100">
-        <div className="drop-shadow-[0_2px_8px_rgba(255,255,255,0.15)]">
+      <main className={`flex-1 overflow-y-auto transition-colors duration-300 ${isDark ? 'bg-[#1f1a17] text-stone-100' : 'bg-[#f8f2eb] text-[#2f241f]'}`}>
+        <div className={isDark ? 'drop-shadow-[0_2px_8px_rgba(255,255,255,0.15)]' : 'drop-shadow-[0_2px_8px_rgba(47,36,31,0.08)]'}>
           <Routes>
-            <Route path="/homepage" element={<Homepage token={token} />} />
+            <Route path="/homepage" element={<Homepage token={token} theme={theme} />} />
             <Route path="/profile" element={<Profile token={token} />} />
             {role === 'admin' && <Route path="/manage-groups" element={<ManageGroups role={role} />} />}
             <Route path="/members" element={<MemberManagement role={role} currentUserId={token.user.id} />} />
@@ -328,6 +343,7 @@ const App = () => {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/create-route/:tourId" element={<RouteManagement />} />
             <Route path="*" element={<Navigate to="/homepage" />} />
+            <Route path="/latency-test" element={<CheckpointLatencyTest />} />
           </Routes>
         </div>
       </main>
