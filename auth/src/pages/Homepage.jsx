@@ -85,8 +85,8 @@ const Homepage = ({ token, theme = 'dark' }) => {
             <MapPin className="text-orange-500 animate-bounce drop-shadow-md z-10" size={32} />
             <span className="absolute bottom-2 w-4 h-1 bg-slate-300 rounded-full blur-[1px] opacity-70 animate-pulse"></span>
           </div>
-          <p className="text-slate-800 font-bold text-base tracking-wide">Syncing Routes...</p>
-          <p className="text-slate-400 text-xs font-medium">Fetching live RFID checkpoint data</p>
+          <p className={`font-bold text-base tracking-wide ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>Syncing Routes...</p>
+          <p className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Fetching live RFID checkpoint data</p>
         </div>
       </div>
     );
@@ -125,11 +125,11 @@ const Homepage = ({ token, theme = 'dark' }) => {
           <div className="flex items-center gap-4 pl-4 w-full md:w-auto">
             <MapPin className="text-orange-500 shrink-0" size={24} />
             <div className="text-left">
-              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Your Location Status</p>
-              <h2 className="text-base font-bold text-slate-800">
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Your Location Status</p>
+              <h2 className={`text-base font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
                 {currentLocation ? `Checkpoint ${currentLocation.checkpoint_type}` : "Status Pending"}
               </h2>
-              <p className="text-slate-500 text-xs truncate max-w-[240px] md:max-w-xs">{currentLocationAddress}</p>
+              <p className={`text-xs truncate max-w-[240px] md:max-w-xs ${isDark ? 'text-slate-500' : 'text-slate-600'}`}>{currentLocationAddress}</p>
             </div>
           </div>
           
@@ -211,8 +211,8 @@ const Homepage = ({ token, theme = 'dark' }) => {
       {/* 4. WHY CHOOSE US (Route Information Cards) */}
       <div ref={routeInfoRef} className="max-w-6xl mx-auto px-4 mb-16 scroll-mt-6">
         <div className="text-center mb-12">
-          <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight mb-2">More About Checkpoints</h2>
-          <p className="text-slate-500 text-sm max-w-md mx-auto">Explore the detailed information about each checkpoint and where to meet up in the journey</p>
+          <h2 className={`text-3xl font-extrabold tracking-tight mb-2 ${isDark ? 'text-[#fdf7ef]' : 'text-slate-900'}`}>More About Checkpoints</h2>
+          <p className={`text-sm max-w-md mx-auto ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Explore the detailed information about each checkpoint and where to meet up in the journey</p>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">

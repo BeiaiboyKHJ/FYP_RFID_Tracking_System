@@ -10,7 +10,6 @@ import NotificationPage from './pages/NotificationPage';
 import SchedulePage from './pages/SchedulePage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import RouteManagement from './pages/RouteManagement';
-import CheckpointLatencyTest from './pages/CheckpointLatencyTest';
 import { supabase } from './client';
 
 const App = () => {
@@ -321,11 +320,6 @@ const App = () => {
           onClick={() => navigate('/create-route/1')} active={location.pathname.startsWith('/create-route')}
         />
 
-        <SidebarItem
-          icon={<Sparkles size={20} />} text="Latency Test"
-          onClick={() => navigate('/latency-test')} active={location.pathname === '/latency-test'}
-        />
-
         <hr className="my-3 border-slate-800 opacity-20" />
         <SidebarItem icon={<LogOut size={20} />} text="Logout" onClick={handleLogout} />
       </Sidebar>
@@ -343,7 +337,6 @@ const App = () => {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/create-route/:tourId" element={<RouteManagement />} />
             <Route path="*" element={<Navigate to="/homepage" />} />
-            <Route path="/latency-test" element={<CheckpointLatencyTest />} />
           </Routes>
         </div>
       </main>
