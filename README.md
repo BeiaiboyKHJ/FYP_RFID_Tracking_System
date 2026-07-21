@@ -31,8 +31,14 @@ A web-based system for tour organizer to monitor group members at checkpoints us
 - Warn organisers early when the schedule is at risk.
 - Support safer, more proactive trip coordination.
 
+| Tool | Version |
+|---|---:|
+| Python | 3.11 |
+| Flask | See `requirements.txt` |
+| scikit-learn | 1.6.1 |
+| NumPy | See `requirements.txt` |
+| pandas | See `requirements.txt` |
+| Gunicorn | See `requirements.txt` |
 
-
-## Status
 
 Final Year Project — under active development.
